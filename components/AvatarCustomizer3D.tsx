@@ -47,41 +47,24 @@ export const AvatarCustomizer3D: React.FC<AvatarCustomizer3DProps> = ({ compact 
     clothingColor: currentUser.avatarConfig?.clothingColor || '#6366f1',
   });
 
-  // Cargar avatares disponibles y selección actual
+  // Cargar catálogo de avatares (dato público, no depende de session)
   useEffect(() => {
     let cancelled = false;
-    const loadAvatars = async () => {
+    const loadCatalog = async () => {
       setLoadingAvatars(true);
       try {
-        console.log('🎭 Cargando avatares 3D...');
         const { data: avatarsData, error: avatarsError } = await supabase
           .from('avatares_3d')
           .select('id, nombre, descripcion, modelo_url, thumbnail_url, escala')
           .eq('activo', true)
           .order('orden', { ascending: true });
         
-        if (avatarsError) {
-          console.error('🎭 Error cargando avatares:', avatarsError);
-        } else {
-          console.log('🎭 Avatares cargados:', avatarsData?.length || 0);
-          if (!cancelled && avatarsData) setAvailableAvatars(avatarsData);
-        }
-
-        if (session?.user?.id) {
-          const { data: userData, error: userError } = await supabase
-            .from('usuarios')
-            .select('avatar_3d_id')
-            .eq('id', session.user.id)
-            .maybeSingle();
-          
-          if (userError) {
-            console.error('🎭 Error cargando avatar usuario:', userError);
-          }
-          
-          if (!cancelled) {
-            if (userData?.avatar_3d_id) {
-              setSelectedAvatarId(userData.avatar_3d_id);
-            } else if (avatarsData && avatarsData.length > 0) {
+        if (!cancelled) {
+          if (avatarsError) {
+            console.error('🎭 Error cargando avatares:', avatarsError);
+          } else if (avatarsData) {
+            setAvailableAvatars(avatarsData);
+            if (!selectedAvatarId && avatarsData.length > 0) {
               setSelectedAvatarId(avatarsData[0].id);
             }
           }
@@ -92,8 +75,29 @@ export const AvatarCustomizer3D: React.FC<AvatarCustomizer3DProps> = ({ compact 
         if (!cancelled) setLoadingAvatars(false);
       }
     };
-    if (session?.user?.id) loadAvatars();
+    loadCatalog();
     return () => { cancelled = true; };
+  }, []);
+
+  // Cargar avatar seleccionado del usuario (depende de session)
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    const loadUserAvatar = async () => {
+      try {
+        const { data: userData } = await supabase
+          .from('usuarios')
+          .select('avatar_3d_id')
+          .eq('id', session.user.id)
+          .maybeSingle();
+        
+        if (userData?.avatar_3d_id) {
+          setSelectedAvatarId(userData.avatar_3d_id);
+        }
+      } catch (error) {
+        console.error('🎭 Error cargando avatar usuario:', error);
+      }
+    };
+    loadUserAvatar();
   }, [session?.user?.id]);
 
   const handleUploadPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
