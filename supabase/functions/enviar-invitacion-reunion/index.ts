@@ -152,7 +152,7 @@ serve(async (req) => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            from: 'Cowork Virtual <onboarding@resend.dev>',
+            from: 'Cowork Virtual <noreply@urpeailab.com>',
             to: [dest.email],
             subject: `📅 Invitación: ${reunion.titulo}`,
             html: emailHtml,

@@ -63,7 +63,9 @@ const App: React.FC = () => {
 
   // Detectar si es una invitación de videollamada (URL: /join/TOKEN) o acceso directo (URL: /sala/ID)
   const [meetingToken, setMeetingToken] = useState<string | null>(null);
-  const [directSalaId, setDirectSalaId] = useState<string | null>(null);
+  const [directSalaId, setDirectSalaId] = useState<string | null>(
+    sessionStorage.getItem('pending_sala_id')
+  );
   const [inMeeting, setInMeeting] = useState(false);
   const [meetingNombre, setMeetingNombre] = useState('');
   const [showThankYou, setShowThankYou] = useState(false);
@@ -79,6 +81,7 @@ const App: React.FC = () => {
       const salaId = path.replace('/sala/', '');
       if (salaId) {
         setDirectSalaId(salaId);
+        sessionStorage.setItem('pending_sala_id', salaId);
       }
     }
   }, []);
@@ -153,6 +156,7 @@ const App: React.FC = () => {
           salaId={directSalaId}
           onLeave={() => {
             setDirectSalaId(null);
+            sessionStorage.removeItem('pending_sala_id');
             window.history.pushState({}, '', '/');
           }}
         />

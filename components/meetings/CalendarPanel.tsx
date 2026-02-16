@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../../store/useStore';
-import { supabase } from '../../lib/supabase';
+import { supabase, APP_URL } from '../../lib/supabase';
 import { ScheduledMeeting } from '../../types';
 import { googleCalendar, GoogleCalendarEvent } from '../../lib/googleCalendar';
 import { getSettingsSection } from '../../lib/userSettings';
@@ -43,6 +43,7 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ onJoinMeeting }) =
   const [showInviteModal, setShowInviteModal] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [selectedMeeting, setSelectedMeeting] = useState<ScheduledMeeting | null>(null);
+  const creatingMeetingRef = React.useRef(false);
 
   // Función para copiar link de reunión
   const copyMeetingLink = async (meetingLink: string, meetingId: string) => {
@@ -174,27 +175,40 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ onJoinMeeting }) =
       console.log('❌ Validación falló:', { titulo: newMeeting.titulo, fecha: newMeeting.fecha, hora_inicio: newMeeting.hora_inicio, workspace: activeWorkspace?.id });
       return;
     }
+
+    // Guard anti double-click
+    if (creatingMeetingRef.current) {
+      console.log('⚠️ Creación en progreso, ignorando doble clic');
+      return;
+    }
+    creatingMeetingRef.current = true;
     
     console.log('✅ Validación OK, creando reunión...');
+
+    try {
 
     const fechaInicio = new Date(`${newMeeting.fecha}T${newMeeting.hora_inicio}`);
     const fechaFin = newMeeting.hora_fin 
       ? new Date(`${newMeeting.fecha}T${newMeeting.hora_fin}`)
       : new Date(fechaInicio.getTime() + 60 * 60 * 1000);
 
+    console.log('📅 Fechas:', { fechaInicio: fechaInicio.toISOString(), fechaFin: fechaFin.toISOString() });
+
     // Generar link de meeting único (se actualizará con Google Meet si está conectado)
     const meetingCode = Math.random().toString(36).substring(2, 10);
-    let meetingLink = `${window.location.origin}/meet/${meetingCode}`;
+    let meetingLink = `${APP_URL}/meet/${meetingCode}`;
     let googleEventId: string | null = null;
 
     // Obtener emails de participantes para invitaciones
     let participantesEmails: string[] = [];
     if (newMeeting.participantes.length > 0) {
-      const { data: usuariosData } = await supabase
+      console.log('👥 Obteniendo emails de', newMeeting.participantes.length, 'participantes...');
+      const { data: usuariosData, error: emailError } = await supabase
         .from('usuarios')
         .select('id, email')
         .in('id', newMeeting.participantes);
       
+      if (emailError) console.error('❌ Error obteniendo emails:', emailError);
       if (usuariosData) {
         participantesEmails = usuariosData
           .map(u => u.email)
@@ -202,9 +216,12 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ onJoinMeeting }) =
       }
     }
 
+    console.log('📧 Emails participantes:', participantesEmails.length);
+
     // Crear evento en Google Calendar si está conectado Y el setting lo permite
     const calSettings = getSettingsSection('calendar');
     const shouldCreateGoogle = calSettings.autoCreateGoogleEvent !== false;
+    console.log('📆 Google Calendar:', { googleConnected, shouldCreateGoogle });
     if (googleConnected && shouldCreateGoogle) {
       try {
         const googleEvent = await googleCalendar.createEvent({
@@ -214,16 +231,14 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ onJoinMeeting }) =
           end: fechaFin.toISOString(),
           attendees: participantesEmails,
           sendUpdates: 'all',
-          meetingLink: meetingLink // Pasa el link interno para incluir en descripción
+          meetingLink: meetingLink
         });
         
         if (googleEvent) {
           googleEventId = googleEvent.id;
-          // Ya NO usamos googleEvent.hangoutLink - mantenemos meetingLink interno
         }
       } catch (err) {
         console.error('Error creando evento en Google Calendar:', err);
-        // Continuar sin Google Calendar
       }
     }
 
@@ -249,8 +264,10 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ onJoinMeeting }) =
     const configuracionSala = crearConfiguracionSala(
       newMeeting.tipo_reunion,
       invitadosExternos.length > 0 ? invitadosExternos : undefined,
-      undefined // reunionId se agregará después
+      undefined
     );
+
+    console.log('🏗️ Config sala creada, tipo:', tipoSala);
 
     // Crear reunión en Supabase
     console.log('📝 Insertando en reuniones_programadas...', { 
@@ -305,7 +322,7 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ onJoinMeeting }) =
 
       // Actualizar reunión con sala_id y link correcto de videollamada
       if (sala) {
-        const videoCallLink = `${window.location.origin}/sala/${sala.id}`;
+        const videoCallLink = `${APP_URL}/sala/${sala.id}`;
         await supabase
           .from('reuniones_programadas')
           .update({ 
@@ -325,6 +342,46 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ onJoinMeeting }) =
           estado: 'pendiente'
         }));
         await supabase.from('reunion_participantes').insert(participantesData);
+
+        // Enviar notificación por email a participantes internos
+        try {
+          const { data: participantesInfo } = await supabase
+            .from('usuarios')
+            .select('email, nombre')
+            .in('id', newMeeting.participantes);
+
+          if (participantesInfo && participantesInfo.length > 0) {
+            console.log('📧 Enviando notificación a participantes internos...', participantesInfo);
+            const { data: emailResult, error: emailError } = await supabase.functions.invoke('enviar-invitacion-reunion', {
+              body: {
+                destinatarios: participantesInfo.map(p => ({
+                  email: p.email,
+                  nombre: p.nombre || p.email
+                })),
+                reunion: {
+                  titulo: newMeeting.titulo.trim(),
+                  descripcion: newMeeting.descripcion.trim(),
+                  fecha_inicio: fechaInicio.toISOString(),
+                  fecha_fin: fechaFin.toISOString(),
+                  meeting_link: meetingLink,
+                  organizador_nombre: currentUser.name || 'Organizador',
+                  tipo_reunion: newMeeting.tipo_reunion
+                }
+              }
+            });
+            if (emailError) console.error('❌ Error notificando participantes:', emailError);
+            else console.log('✅ Participantes notificados:', emailResult);
+
+            // Marcar como notificados
+            await supabase
+              .from('reunion_participantes')
+              .update({ notificado: true })
+              .eq('reunion_id', meeting.id)
+              .in('usuario_id', newMeeting.participantes);
+          }
+        } catch (notifErr) {
+          console.error('❌ Error en notificación a participantes:', notifErr);
+        }
       }
 
       // Incluir invitado del formulario si tiene datos válidos pero no fue agregado
@@ -425,6 +482,13 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ onJoinMeeting }) =
       resetNewMeeting();
       loadMeetings();
       syncGoogleEvents();
+    }
+
+    } catch (err) {
+      console.error('❌ ERROR FATAL en createMeeting:', err);
+      alert('Error inesperado al crear reunión. Revisa la consola.');
+    } finally {
+      creatingMeetingRef.current = false;
     }
   };
 
