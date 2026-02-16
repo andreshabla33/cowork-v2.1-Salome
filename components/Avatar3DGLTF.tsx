@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useRef, useEffect, useState, useMemo } from 'react';
-import { useFrame, useGraph, useLoader } from '@react-three/fiber';
+import { useFrame, useGraph } from '@react-three/fiber';
 import { useGLTF, useAnimations } from '@react-three/drei';
 import * as THREE from 'three';
-import { SkeletonUtils } from 'three-stdlib';
+import { SkeletonUtils, GLTFLoader } from 'three-stdlib';
 import { supabase } from '../lib/supabase';
 
 // ============== TIPOS ==============
@@ -14,6 +14,7 @@ interface AnimationConfig {
   url: string;
   loop: boolean;
   orden: number;
+  strip_root_motion?: boolean;
 }
 
 export interface Avatar3DConfig {
@@ -21,10 +22,8 @@ export interface Avatar3DConfig {
   nombre: string;
   modelo_url: string;
   escala: number;
+  textura_url?: string | null;
   animaciones?: AnimationConfig[];
-  animacion_idle_url?: string | null;
-  animacion_walk_url?: string | null;
-  animacion_salute_url?: string | null;
 }
 
 // Estados de animación disponibles
@@ -39,27 +38,9 @@ interface GLTFAvatarProps {
   scale?: number;
 }
 
-// URL base de Supabase Storage
+// URL del modelo por defecto (fallback cuando no hay avatar configurado)
 const STORAGE_BASE = 'https://lcryrsdyrzotjqdxcwtp.supabase.co/storage/v1/object/public/avatars';
-
-// URLs de animaciones desde Supabase Storage
-const ANIMATION_URLS: Record<AnimationState, string> = {
-  idle: `${STORAGE_BASE}/Monica_Idle.glb`,
-  walk: `${STORAGE_BASE}/Monica_Walk.glb`,
-  run: `${STORAGE_BASE}/Monica_Run.glb`,
-  cheer: `${STORAGE_BASE}/Meshy_AI_Animation_Cheer_with_Both_Hands_withSkin.glb`,
-  dance: `${STORAGE_BASE}/Monica_Dance.glb`,
-  sit: `${STORAGE_BASE}/Monica_Sit.glb`,
-  wave: `${STORAGE_BASE}/Monica_Wave.glb`,
-  jump: `${STORAGE_BASE}/Meshy_AI_Animation_Happy_jump_f_withSkin.glb`,
-  victory: `${STORAGE_BASE}/Meshy_AI_Animation_Victory_Cheer_withSkin.glb`,
-};
-
-// URL del modelo base (GLB Mixamo con skeleton correcto)
-const BASE_MODEL_URL = ANIMATION_URLS.idle;
-
-// URL de la textura PNG del atlas de Monica
-const TEXTURE_PNG_URL = `${STORAGE_BASE}/texture_atlas_Monica_v2.png`;
+const DEFAULT_MODEL_URL = `${STORAGE_BASE}/Monica_Idle.glb`;
 
 // Animaciones que hacen loop
 const LOOP_ANIMATIONS: AnimationState[] = ['idle', 'walk', 'run', 'dance'];
@@ -129,16 +110,10 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
   const [currentAnimation, setCurrentAnimation] = useState<AnimationState>('idle');
   
   // URL del modelo base
-  const modelUrl = avatarConfig?.modelo_url || ANIMATION_URLS.idle;
+  const modelUrl = avatarConfig?.modelo_url || DEFAULT_MODEL_URL;
   
-  // Detectar si el avatar tiene animaciones propias (ej: Meshy)
-  const hasAvatarAnims = !!(avatarConfig?.animacion_walk_url);
-  
-  // Cargar modelo principal
+  // Cargar modelo principal (useGLTF solo para el modelo, no animaciones)
   const { scene, animations: baseAnimations } = useGLTF(modelUrl);
-  
-  // Cargar textura PNG directamente
-  const monicaTexture = useLoader(THREE.TextureLoader, TEXTURE_PNG_URL);
   
   // Clonar la escena correctamente para soportar SkinnedMesh
   const clone = useMemo(() => {
@@ -151,7 +126,6 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
 
   // Auto-corrección de escala y posición Y
   const { modelScaleCorrection, modelYOffset } = useMemo(() => {
-    // Escala: detectar modelos microscópicos
     const localBox = new THREE.Box3();
     clone.traverse((child: any) => {
       if ((child.isMesh || child.isSkinnedMesh) && child.geometry) {
@@ -167,18 +141,15 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
       const TARGET_HEIGHT = 1.5;
       scaleCorrection = TARGET_HEIGHT / localSize.y;
     }
-
-    // Posición Y: detectar modelos flotantes (world BB min Y > 0.5)
     const worldBox = new THREE.Box3().setFromObject(clone);
     let yOffset = 0;
     if (!worldBox.isEmpty() && worldBox.min.y > 0.5) {
       yOffset = -worldBox.min.y;
     }
-
     return { modelScaleCorrection: scaleCorrection, modelYOffset: yOffset };
   }, [clone]);
 
-  // Recopilar nombres de huesos y verificar meshes del modelo
+  // Recopilar nombres de huesos del modelo
   const boneNames = useMemo(() => {
     const names = new Set<string>();
     clone.traverse((child: any) => {
@@ -187,39 +158,39 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
     return names;
   }, [clone]);
 
-  // Detectar si el modelo es compatible con animaciones Mixamo
-  // Mixamo usa huesos como mixamorig:Hips o Hips, LeftUpLeg, Spine, etc.
-  const isMixamoCompatible = useMemo(() => {
-    const mixamoBones = ['Hips', 'Spine', 'LeftUpLeg', 'RightUpLeg', 'LeftArm', 'RightArm'];
-    let matches = 0;
-    for (const mb of mixamoBones) {
-      for (const bn of boneNames) {
-        if (bn === mb || bn === `mixamorig:${mb}` || bn === `mixamorig${mb}`) {
-          matches++;
-          break;
-        }
-      }
-    }
-    return matches >= 3; // Al menos 3 de 6 huesos clave
-  }, [boneNames]);
+  // ============== CARGA DINÁMICA DE TEXTURA (desde BD) ==============
+  const [externalTexture, setExternalTexture] = useState<THREE.Texture | null>(null);
 
-  // Aplicar textura PNG solo para modelos Mixamo (Monica), colores para otros
+  useEffect(() => {
+    const texturaUrl = avatarConfig?.textura_url;
+    if (!texturaUrl) {
+      setExternalTexture(null);
+      return;
+    }
+    const loader = new THREE.TextureLoader();
+    loader.load(texturaUrl, (tex) => {
+      tex.flipY = false;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      setExternalTexture(tex);
+    }, undefined, () => {
+      console.warn('⚠️ Error cargando textura:', texturaUrl);
+      setExternalTexture(null);
+    });
+  }, [avatarConfig?.textura_url]);
+
+  // Aplicar textura externa o respetar materiales originales
   useEffect(() => {
     clone.traverse((child: any) => {
       if (child.isMesh || child.isSkinnedMesh) {
         const mat = child.material as THREE.MeshStandardMaterial;
         if (!mat) return;
-        if (isMixamoCompatible && monicaTexture && !hasAvatarAnims) {
-          // Modelo Mixamo: aplicar textura atlas de Monica
-          monicaTexture.flipY = false;
-          monicaTexture.colorSpace = THREE.SRGBColorSpace;
-          mat.map = monicaTexture;
+        if (externalTexture) {
+          mat.map = externalTexture;
           mat.metalness = 0;
           mat.roughness = 0.9;
           mat.side = THREE.DoubleSide;
           mat.needsUpdate = true;
         } else {
-          // Modelo no-Mixamo: aplicar colores si se proporcionan, respetar material original
           if (skinColor && mat.name?.toLowerCase().includes('skin')) {
             mat.color = new THREE.Color(skinColor);
           }
@@ -231,76 +202,73 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
         }
       }
     });
-  }, [clone, monicaTexture, isMixamoCompatible, skinColor, clothingColor]);
+  }, [clone, externalTexture, skinColor, clothingColor]);
 
-  // Cargar idle (fallback si el modelo no tiene animaciones propias)
-  const idleGltf = useGLTF(ANIMATION_URLS.idle);
-  // Cargar animaciones: usar URLs del avatar si existen, sino defaults (Monica)
-  const walkGltf = useGLTF(avatarConfig?.animacion_walk_url || ANIMATION_URLS.walk);
-  const runGltf = useGLTF(hasAvatarAnims ? (avatarConfig!.animacion_walk_url!) : ANIMATION_URLS.run);
-  const cheerGltf = useGLTF(ANIMATION_URLS.cheer);
-  const danceGltf = useGLTF(ANIMATION_URLS.dance);
-  const sitGltf = useGLTF(ANIMATION_URLS.sit);
-  const waveGltf = useGLTF(ANIMATION_URLS.wave);
-  const jumpGltf = useGLTF(ANIMATION_URLS.jump);
-  const victoryGltf = useGLTF(ANIMATION_URLS.victory);
-  
-  // Combinar todas las animaciones con nombres únicos + remapear tracks
+  // ============== CARGA DINÁMICA DE ANIMACIONES (desde BD) ==============
+  const [loadedAnimClips, setLoadedAnimClips] = useState<Record<string, THREE.AnimationClip>>({});
+  const animConfigRef = useRef<string>('');
+
+  useEffect(() => {
+    const animaciones = avatarConfig?.animaciones;
+    if (!animaciones || animaciones.length === 0 || boneNames.size === 0) {
+      setLoadedAnimClips({});
+      return;
+    }
+
+    // Evitar re-cargar si la config no cambió
+    const configKey = animaciones.map(a => a.url).join('|');
+    if (configKey === animConfigRef.current) return;
+    animConfigRef.current = configKey;
+
+    let cancelled = false;
+    const loader = new GLTFLoader();
+
+    Promise.all(
+      animaciones.map(async (anim) => {
+        try {
+          const gltf = await loader.loadAsync(anim.url);
+          return { nombre: anim.nombre, clips: gltf.animations, strip: anim.strip_root_motion ?? false };
+        } catch (err) {
+          console.warn(`⚠️ Error loading animation ${anim.nombre}:`, err);
+          return null;
+        }
+      })
+    ).then((results) => {
+      if (cancelled) return;
+      const clips: Record<string, THREE.AnimationClip> = {};
+      results.forEach((r) => {
+        if (r && r.clips.length > 0) {
+          const clip = remapAnimationTracks(r.clips[0], boneNames, r.strip);
+          clip.name = r.nombre;
+          clips[r.nombre] = clip;
+        }
+      });
+      setLoadedAnimClips(clips);
+    });
+
+    return () => { cancelled = true; };
+  }, [avatarConfig?.animaciones, boneNames]);
+
+  // Combinar animaciones: embedded del modelo + cargadas dinámicamente desde BD
   const allAnimations = useMemo(() => {
-    if (boneNames.size === 0) return [];
-
-    const addAnim = (source: THREE.AnimationClip[], name: string, anims: THREE.AnimationClip[], stripRootMotion = false) => {
-      if (source.length > 0) {
-        const clip = remapAnimationTracks(source[0], boneNames, stripRootMotion);
-        clip.name = name;
-        anims.push(clip);
-      }
-    };
-
     const anims: THREE.AnimationClip[] = [];
 
-    if (hasAvatarAnims) {
-      // Avatar con animaciones propias (ej: Meshy) — NO usar anims de Monica
-      if (baseAnimations.length > 0) {
-        addAnim(baseAnimations, 'idle', anims);
-      } else {
-        addAnim(idleGltf.animations, 'idle', anims);
-      }
-      // Walk/Run: del archivo propio del avatar
-      addAnim(walkGltf.animations, 'walk', anims, true);
-      addAnim(runGltf.animations, 'run', anims, true);
-      // Cheer/Jump/Victory: estos ya son de Meshy en ANIMATION_URLS
-      addAnim(cheerGltf.animations, 'cheer', anims);
-      addAnim(jumpGltf.animations, 'jump', anims);
-      addAnim(victoryGltf.animations, 'victory', anims);
-      // dance, sit, wave son de Monica → skip para evitar deformación
-    } else if (isMixamoCompatible) {
-      // Modelo Mixamo (Monica): usar animaciones externas de Monica
-      if (baseAnimations.length > 0) {
-        addAnim(baseAnimations, 'idle', anims);
-      } else {
-        addAnim(idleGltf.animations, 'idle', anims);
-      }
-      addAnim(walkGltf.animations, 'walk', anims, true);
-      addAnim(runGltf.animations, 'run', anims, true);
-      addAnim(cheerGltf.animations, 'cheer', anims);
-      addAnim(danceGltf.animations, 'dance', anims);
-      addAnim(sitGltf.animations, 'sit', anims);
-      addAnim(waveGltf.animations, 'wave', anims);
-      addAnim(jumpGltf.animations, 'jump', anims);
-      addAnim(victoryGltf.animations, 'victory', anims);
-    } else {
-      // Modelo NO Mixamo: usar solo animaciones propias del modelo
-      baseAnimations.forEach((clip, i) => {
-        const name = i === 0 ? 'idle' : clip.name || `anim_${i}`;
-        const remapped = remapAnimationTracks(clip, boneNames);
-        remapped.name = name;
-        anims.push(remapped);
-      });
+    // Idle: usar del BD si existe, sino del modelo embedded
+    if (loadedAnimClips['idle']) {
+      anims.push(loadedAnimClips['idle']);
+    } else if (baseAnimations.length > 0) {
+      const clip = remapAnimationTracks(baseAnimations[0], boneNames);
+      clip.name = 'idle';
+      anims.push(clip);
     }
-    
+
+    // Todas las demás animaciones cargadas desde BD
+    Object.entries(loadedAnimClips).forEach(([name, clip]) => {
+      if (name !== 'idle') anims.push(clip);
+    });
+
     return anims;
-  }, [boneNames, baseAnimations, isMixamoCompatible, hasAvatarAnims, idleGltf.animations, walkGltf.animations, runGltf.animations, cheerGltf.animations, danceGltf.animations, sitGltf.animations, waveGltf.animations, jumpGltf.animations, victoryGltf.animations]);
+  }, [baseAnimations, boneNames, loadedAnimClips]);
   
   // Configurar animaciones usando el ref del grupo raíz
   const { actions } = useAnimations(allAnimations, groupRef);
@@ -487,8 +455,8 @@ export const useAvatar3D = (userId?: string) => {
           // Sin avatar asignado, usar config por defecto
           setAvatarConfig({
             id: 'default',
-            nombre: 'Monica IA',
-            modelo_url: BASE_MODEL_URL,
+            nombre: 'Default',
+            modelo_url: DEFAULT_MODEL_URL,
             escala: 1,
           });
           setLoading(false);
@@ -506,45 +474,50 @@ export const useAvatar3D = (userId?: string) => {
           console.warn('⚠️ Error cargando avatar:', avatarError.message);
           setAvatarConfig({
             id: 'default',
-            nombre: 'Monica IA',
-            modelo_url: BASE_MODEL_URL,
+            nombre: 'Default',
+            modelo_url: DEFAULT_MODEL_URL,
             escala: 1,
           });
         } else if (avatar) {
-          setAvatarConfig({
+          // Config base del avatar
+          const config: Avatar3DConfig = {
             id: avatar.id,
             nombre: avatar.nombre,
-            modelo_url: avatar.modelo_url || BASE_MODEL_URL,
+            modelo_url: avatar.modelo_url || DEFAULT_MODEL_URL,
             escala: avatar.escala || 1,
-            animacion_idle_url: avatar.animacion_idle_url || null,
-            animacion_walk_url: avatar.animacion_walk_url || null,
-            animacion_salute_url: avatar.animacion_salute_url || null,
-          });
+            textura_url: avatar.textura_url || null,
+          };
+          setAvatarConfig(config);
         }
 
-        // Cargar animaciones personalizadas (si existen)
+        // Cargar animaciones desde avatar_animaciones (100% dinámico desde BD)
         const { data: anims } = await supabase
           .from('avatar_animaciones')
           .select('*')
           .eq('avatar_id', avatarId)
+          .eq('activo', true)
           .order('orden', { ascending: true });
 
         if (anims && anims.length > 0) {
-          setAnimaciones(anims.map((a: any) => ({
+          const animConfigs = anims.map((a: any) => ({
             id: a.id,
             nombre: a.nombre,
             url: a.url,
             loop: a.loop ?? false,
             orden: a.orden ?? 0,
-          })));
+            strip_root_motion: a.strip_root_motion ?? false,
+          }));
+          setAnimaciones(animConfigs);
+          // Inyectar animaciones en el avatarConfig para que GLTFAvatar las cargue
+          setAvatarConfig(prev => prev ? { ...prev, animaciones: animConfigs } : prev);
         }
       } catch (err: any) {
         console.error('❌ Error en useAvatar3D:', err);
         setError(err.message || 'Error desconocido');
         setAvatarConfig({
           id: 'default',
-          nombre: 'Monica IA',
-          modelo_url: BASE_MODEL_URL,
+          nombre: 'Default',
+          modelo_url: DEFAULT_MODEL_URL,
           escala: 1,
         });
       } finally {
@@ -644,10 +617,8 @@ export const useAvatarControls = () => {
   };
 };
 
-// Precargar todos los modelos
-Object.values(ANIMATION_URLS).forEach(url => {
-  useGLTF.preload(url);
-});
+// Precargar modelo por defecto
+useGLTF.preload(DEFAULT_MODEL_URL);
 
 // ============== AVATAR PROCEDURAL CHIBI (FALLBACK) ==============
 interface ProceduralAvatarProps {
