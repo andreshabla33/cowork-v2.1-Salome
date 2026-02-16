@@ -1180,8 +1180,9 @@ const Player: React.FC<PlayerProps> = ({ currentUser, setPosition, stream, showV
           newDirection = distZ > 0 ? 'front' : 'up';
         }
 
-        // Animación: walk al inicio, run después
-        if (effectiveAnimState !== 'cheer' && effectiveAnimState !== 'dance' && effectiveAnimState !== 'sit' && effectiveAnimState !== 'wave') {
+        // Animación: walk al inicio, run después (movimiento SIEMPRE cancela wave/contextual)
+        if (animationState !== 'cheer' && animationState !== 'dance' && animationState !== 'sit') {
+          if (contextualAnim) { setContextualAnim(null); if (contextualTimerRef.current) clearTimeout(contextualTimerRef.current); }
           setAnimationState(isAutoRunning ? 'run' : 'walk');
         }
       }
@@ -1212,8 +1213,9 @@ const Player: React.FC<PlayerProps> = ({ currentUser, setPosition, stream, showV
         // Si ambos fallan, se bloquea (pared)
       }
 
-      // Actualizar animación según movimiento (teclado: shift=run, joystick: magnitude>threshold=run)
-      if (effectiveAnimState !== 'cheer' && effectiveAnimState !== 'dance' && effectiveAnimState !== 'sit' && effectiveAnimState !== 'wave') {
+      // Actualizar animación según movimiento (movimiento SIEMPRE cancela wave/contextual)
+      if (animationState !== 'cheer' && animationState !== 'dance' && animationState !== 'sit') {
+        if (contextualAnim) { setContextualAnim(null); if (contextualTimerRef.current) clearTimeout(contextualTimerRef.current); }
         const shouldRun = hasKeyboardInput ? isRunning : (hasJoystickInput && joystick?.isRunning);
         setAnimationState(shouldRun ? 'run' : 'walk');
       }

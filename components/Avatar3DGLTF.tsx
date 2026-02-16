@@ -2,7 +2,7 @@
 
 import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { useFrame, useGraph } from '@react-three/fiber';
-import { useGLTF, useAnimations } from '@react-three/drei';
+import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { SkeletonUtils, GLTFLoader } from 'three-stdlib';
 import { supabase } from '../lib/supabase';
@@ -307,20 +307,67 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
     return anims;
   }, [baseAnimations, boneNames, loadedAnimClips]);
   
-  // Configurar animaciones usando el ref del grupo raíz
-  const { actions } = useAnimations(allAnimations, groupRef);
-  
+  // ============== MIXER MANUAL (reemplaza useAnimations de drei para aislamiento total) ==============
+  const mixerRef = useRef<THREE.AnimationMixer | null>(null);
+  const actionsRef = useRef<Record<string, THREE.AnimationAction>>({});
+  const clipVersionRef = useRef(0);
+
+  // Crear mixer una sola vez cuando el grupo esté montado
+  useEffect(() => {
+    if (!groupRef.current) return;
+    const mixer = new THREE.AnimationMixer(groupRef.current);
+    mixerRef.current = mixer;
+    return () => {
+      mixer.stopAllAction();
+      mixer.uncacheRoot(groupRef.current!);
+      mixerRef.current = null;
+    };
+  }, []);
+
+  // Reconstruir actions cuando cambian los clips
+  useEffect(() => {
+    const mixer = mixerRef.current;
+    const root = groupRef.current;
+    if (!mixer || !root || allAnimations.length === 0) return;
+
+    // Limpiar actions anteriores
+    mixer.stopAllAction();
+    Object.values(actionsRef.current).forEach(action => {
+      mixer.uncacheAction(action.getClip(), root);
+    });
+
+    // Crear actions nuevas
+    const newActions: Record<string, THREE.AnimationAction> = {};
+    allAnimations.forEach(clip => {
+      newActions[clip.name] = mixer.clipAction(clip, root);
+    });
+    actionsRef.current = newActions;
+    clipVersionRef.current++;
+    console.log('🎭 [MIXER] Actions rebuilt:', Object.keys(newActions).join(','), '| version:', clipVersionRef.current);
+
+    // Iniciar idle por defecto
+    if (newActions['idle']) {
+      newActions['idle'].reset().fadeIn(0.2).play();
+    }
+    setCurrentAnimation('idle');
+  }, [allAnimations]);
+
+  // Avanzar mixer cada frame
+  useFrame((_, delta) => {
+    mixerRef.current?.update(delta);
+  });
+
+  // Referencia estable a actions para useEffect de transición
+  const actions = actionsRef.current;
+
   // Cambiar animación según estado — transiciones inmediatas al moverse, debounce solo al volver a idle
   const pendingAnimRef = useRef<{ anim: AnimationState; timer: ReturnType<typeof setTimeout> } | null>(null);
-  const CROSSFADE_FAST = 0.15; // Transición rápida para movimiento (idle→walk/run)
-  const CROSSFADE_SMOOTH = 0.3; // Transición suave para volver a idle o emotes
-  const IDLE_DEBOUNCE_MS = 100; // Solo debounce al volver a idle (evita walk→idle→walk flicker)
+  const CROSSFADE_FAST = 0.15;
+  const CROSSFADE_SMOOTH = 0.3;
+  const IDLE_DEBOUNCE_MS = 100;
 
   useEffect(() => {
-    if (!actions || Object.keys(actions).length === 0) {
-      console.warn('🎭 [ANIM] No actions available:', Object.keys(actions || {}));
-      return;
-    }
+    if (!actions || Object.keys(actions).length === 0) return;
     
     const targetAnim = animationState;
     if (currentAnimation === targetAnim) {
@@ -332,7 +379,6 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
     }
     console.log('🎭 [ANIM TRANSITION]', currentAnimation, '→', targetAnim, '| actions:', Object.keys(actions).join(','));
 
-    // Fallback: si la animación solicitada no existe, buscar alternativa (nunca T-pose)
     const ANIM_FALLBACKS: Record<string, string[]> = {
       cheer: ['wave', 'dance', 'victory', 'idle'],
       wave: ['cheer', 'idle'],
@@ -350,7 +396,7 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
       for (const fb of fallbacks) {
         if (actions[fb]) return fb;
       }
-      return currentAnimation; // Quedarse en la actual si nada existe
+      return currentAnimation;
     };
 
     const resolvedAnim = resolveAnim(targetAnim) as AnimationState;
@@ -370,18 +416,16 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
         );
         next.clampWhenFinished = !LOOP_ANIMATIONS.includes(resolvedAnim);
         next.fadeIn(fadeDuration).play();
-        console.log('🎭 [ANIM APPLIED]', resolvedAnim, '| mixer time:', next.getMixer().time.toFixed(2));
+        console.log('🎭 [ANIM APPLIED]', resolvedAnim);
         setCurrentAnimation(resolvedAnim);
       }
     };
 
-    // Cancelar pending anterior
     if (pendingAnimRef.current) {
       clearTimeout(pendingAnimRef.current.timer);
       pendingAnimRef.current = null;
     }
 
-    // Solo debounce al VOLVER a idle (evita flicker al dejar de caminar brevemente)
     const isReturningToIdle = targetAnim === 'idle' && (currentAnimation === 'walk' || currentAnimation === 'run');
     
     if (isReturningToIdle) {
@@ -390,7 +434,6 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
         timer: setTimeout(() => applyTransition(CROSSFADE_SMOOTH), IDLE_DEBOUNCE_MS),
       };
     } else {
-      // Movimiento y acciones → aplicar inmediatamente
       const isStartingMovement = (targetAnim === 'walk' || targetAnim === 'run') && currentAnimation === 'idle';
       applyTransition(isStartingMovement ? CROSSFADE_FAST : CROSSFADE_SMOOTH);
     }
@@ -401,15 +444,7 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
         pendingAnimRef.current = null;
       }
     };
-  }, [animationState, actions, currentAnimation]);
-
-  // Iniciar animación idle por defecto (re-ejecutar cuando loadedAnimClips cambie,
-  // porque useAnimations no cambia la referencia de actions al agregar clips nuevos)
-  useEffect(() => {
-    if (actions && actions['idle']) {
-      actions['idle'].reset().fadeIn(0.2).play();
-    }
-  }, [actions, loadedAnimClips]);
+  }, [animationState, currentAnimation, clipVersionRef.current]);
 
   // Aplicar colores personalizados SOLO si se pasan explícitamente (respetar materiales originales del GLB)
   useEffect(() => {
