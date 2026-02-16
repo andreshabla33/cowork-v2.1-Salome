@@ -132,13 +132,14 @@ export const SettingsMeetings: React.FC<SettingsMeetingsProps> = ({
 
       const { data } = await supabase
         .from('miembros_espacio')
-        .select('cargo')
+        .select('cargo_id, cargo_ref:cargos!cargo_id(clave)')
         .eq('usuario_id', userId)
         .eq('espacio_id', workspaceId)
         .single();
 
-      if (data?.cargo) {
-        setCargoUsuario(data.cargo as CargoLaboral);
+      const clave = (data?.cargo_ref as any)?.clave;
+      if (clave) {
+        setCargoUsuario(clave as CargoLaboral);
       }
     };
     cargarCargo();

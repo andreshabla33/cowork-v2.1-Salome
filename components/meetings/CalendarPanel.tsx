@@ -135,14 +135,15 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ onJoinMeeting }) =
 
       const { data: miembroData } = await supabase
         .from('miembros_espacio')
-        .select('cargo')
+        .select('cargo_id, cargo_ref:cargos!cargo_id(clave)')
         .eq('usuario_id', currentUser.id)
         .eq('espacio_id', activeWorkspace.id)
         .single();
       
-      if (miembroData?.cargo) {
-        console.log('📋 Cargo del usuario (CalendarPanel):', miembroData.cargo);
-        setCargoUsuario(miembroData.cargo as CargoLaboral);
+      const clave = (miembroData?.cargo_ref as any)?.clave;
+      if (clave) {
+        console.log('📋 Cargo del usuario (CalendarPanel):', clave);
+        setCargoUsuario(clave as CargoLaboral);
       }
     }
   };

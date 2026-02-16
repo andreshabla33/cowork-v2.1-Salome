@@ -52,6 +52,7 @@ export function useOnboarding(): UseOnboardingReturn {
           id,
           espacio_id,
           cargo,
+          cargo_id,
           onboarding_completado,
           espacios_trabajo:espacio_id (
             id,
@@ -130,7 +131,7 @@ export function useOnboarding(): UseOnboardingReturn {
       const { error: updateError } = await supabase
         .from('miembros_espacio')
         .update({
-          cargo,
+          cargo_id: cargo,
           onboarding_completado: true,
         })
         .eq('id', state.miembroId);

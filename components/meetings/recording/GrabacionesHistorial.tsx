@@ -203,13 +203,14 @@ export const GrabacionesHistorial: React.FC = () => {
       
       const { data } = await supabase
         .from('miembros_espacio')
-        .select('cargo, rol')
+        .select('cargo_id, rol, cargo_ref:cargos!cargo_id(clave)')
         .eq('usuario_id', session.user.id)
         .eq('espacio_id', activeWorkspace.id)
         .single();
       
-      if (data?.cargo) {
-        setCargoUsuario(data.cargo as CargoLaboral);
+      const clave = (data?.cargo_ref as any)?.clave;
+      if (clave) {
+        setCargoUsuario(clave as CargoLaboral);
       }
       if (data?.rol) {
         setRolSistema(data.rol);

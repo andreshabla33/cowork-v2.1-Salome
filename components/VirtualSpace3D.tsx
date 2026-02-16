@@ -2648,14 +2648,15 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
       
       const { data } = await supabase
         .from('miembros_espacio')
-        .select('cargo')
+        .select('cargo_id, cargo_ref:cargos!cargo_id(clave)')
         .eq('usuario_id', session.user.id)
         .eq('espacio_id', activeWorkspace.id)
         .single();
       
-      if (data?.cargo) {
-        console.log('📋 Cargo del usuario cargado:', data.cargo);
-        setCargoUsuario(data.cargo);
+      const clave = (data?.cargo_ref as any)?.clave;
+      if (clave) {
+        console.log('📋 Cargo del usuario cargado:', clave);
+        setCargoUsuario(clave);
       }
     };
     

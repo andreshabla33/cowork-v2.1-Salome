@@ -627,7 +627,7 @@ const OnboardingCargoView: React.FC = () => {
       const { error } = await supabase
         .from('miembros_espacio')
         .update({
-          cargo: state.cargoSeleccionado,
+          cargo_id: state.cargoSeleccionado,
           departamento_id: departamentoId,
           onboarding_completado: true,
         })

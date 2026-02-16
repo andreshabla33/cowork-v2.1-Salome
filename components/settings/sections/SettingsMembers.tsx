@@ -10,6 +10,8 @@ interface Member {
   usuario_id: string;
   rol: string;
   cargo: string;
+  cargo_id: string | null;
+  cargo_ref?: { nombre: string } | null;
   aceptado: boolean;
   usuario?: {
     nombre: string;
@@ -62,8 +64,10 @@ export const SettingsMembers: React.FC<SettingsMembersProps> = ({
           usuario_id,
           rol,
           cargo,
+          cargo_id,
           aceptado,
-          usuario:usuarios(nombre, email)
+          usuario:usuarios(nombre, email),
+          cargo_ref:cargos!cargo_id(nombre)
         `)
         .eq('espacio_id', workspaceId),
       supabase
@@ -140,9 +144,9 @@ export const SettingsMembers: React.FC<SettingsMembersProps> = ({
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  {member.cargo && (
+                  {(member.cargo_ref?.nombre || member.cargo) && (
                     <span className="text-xs text-zinc-400 bg-zinc-800 px-2 py-1 rounded-lg">
-                      {member.cargo}
+                      {(member.cargo_ref as any)?.nombre || member.cargo}
                     </span>
                   )}
                   {getRoleBadge(member.rol)}

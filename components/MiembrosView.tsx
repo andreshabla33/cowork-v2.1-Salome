@@ -26,7 +26,7 @@ export const MiembrosView: React.FC = () => {
     try {
       const { data: mData } = await supabase
         .from('miembros_espacio')
-        .select('*, usuario:usuarios(*), departamento:departamentos(*)')
+        .select('*, usuario:usuarios(*), departamento:departamentos(*), cargo_ref:cargos!cargo_id(nombre, clave)')
         .eq('espacio_id', activeWorkspace.id)
         .eq('aceptado', true);
       
@@ -41,8 +41,9 @@ export const MiembrosView: React.FC = () => {
 
       // Obtener cargo del usuario actual
       if (session?.user?.id) {
-        const miCargo = mData?.find((m: any) => m.usuario_id === session.user.id)?.cargo;
-        setCargoUsuario(miCargo || null);
+        const miMiembro = mData?.find((m: any) => m.usuario_id === session.user.id);
+        const clave = miMiembro?.cargo_ref?.clave || miMiembro?.cargo;
+        setCargoUsuario(clave || null);
       }
     } finally {
       setLoading(false);

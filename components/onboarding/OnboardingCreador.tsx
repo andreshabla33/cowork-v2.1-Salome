@@ -75,7 +75,7 @@ export const OnboardingCreador: React.FC<OnboardingCreadorProps> = ({
     try {
       const { error: updateError } = await supabase
         .from('miembros_espacio')
-        .update({ cargo })
+        .update({ cargo_id: cargo })
         .eq('id', miembroId);
       if (updateError) throw updateError;
       await fetchWorkspaces();

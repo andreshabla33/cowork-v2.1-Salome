@@ -99,14 +99,15 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
       
       const { data } = await supabase
         .from('miembros_espacio')
-        .select('cargo')
+        .select('cargo_id, cargo_ref:cargos!cargo_id(clave)')
         .eq('usuario_id', currentUser.id)
         .eq('espacio_id', activeWorkspace.id)
         .single();
       
-      if (data?.cargo) {
-        console.log('📋 Cargo del usuario (MeetingRoom):', data.cargo);
-        setCargoUsuario(data.cargo as CargoLaboral);
+      const clave = (data?.cargo_ref as any)?.clave;
+      if (clave) {
+        console.log('📋 Cargo del usuario (MeetingRoom):', clave);
+        setCargoUsuario(clave as CargoLaboral);
       }
     };
     

@@ -37,6 +37,7 @@ export type CategoriaCargoInfo = {
 // Cargo individual (puede venir de BD o hardcoded como fallback)
 export type CargoInfo = {
   id: string;
+  dbId: string;
   nombre: string;
   descripcion: string;
   categoria: string;
@@ -50,6 +51,7 @@ export type CargoInfo = {
 export interface CargoDB {
   id: string;
   nombre: string;
+  clave: string;
   descripcion: string | null;
   categoria: string;
   icono: string;
@@ -103,7 +105,8 @@ function cargosDBToCargoInfo(cargosDB: CargoDB[]): CargoInfo[] {
     .filter(c => c.activo)
     .sort((a, b) => a.orden - b.orden)
     .map(c => ({
-      id: c.nombre.toLowerCase().replace(/\s+/g, '_'),
+      id: c.clave || c.nombre.toLowerCase().replace(/\s+/g, '_'),
+      dbId: c.id,
       nombre: c.nombre,
       descripcion: c.descripcion || '',
       categoria: c.categoria,
@@ -180,9 +183,10 @@ export const CargoSelector: React.FC<CargoSelectorProps> = ({
 
   const handleConfirm = useCallback(() => {
     if (cargoSeleccionado) {
-      onSelect(cargoSeleccionado);
+      const cargoInfo = cargosPermitidos.find(c => c.id === cargoSeleccionado);
+      onSelect(cargoInfo?.dbId || cargoSeleccionado);
     }
-  }, [cargoSeleccionado, onSelect]);
+  }, [cargoSeleccionado, cargosPermitidos, onSelect]);
 
   // Usar cargosPermitidos (filtrados según rol) en lugar de CARGOS_INFO
   const cargosPorCategoria = cargosPermitidos.reduce((acc, cargo) => {
