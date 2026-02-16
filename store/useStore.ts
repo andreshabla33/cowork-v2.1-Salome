@@ -207,12 +207,31 @@ export const useStore = create<AppState>((set, get) => ({
           if (avatarId) {
             const { data: avatar3D } = await supabase
               .from('avatares_3d')
-              .select('id, nombre, modelo_url, escala')
+              .select('id, nombre, modelo_url, escala, textura_url')
               .eq('id', avatarId)
               .maybeSingle();
             
             if (avatar3D) {
-              avatar3DConfig = avatar3D as Avatar3DConfig;
+              // Cargar animaciones desde avatar_animaciones
+              const { data: anims } = await supabase
+                .from('avatar_animaciones')
+                .select('id, nombre, url, loop, orden, strip_root_motion')
+                .eq('avatar_id', avatarId)
+                .eq('activo', true)
+                .order('orden', { ascending: true });
+
+              avatar3DConfig = {
+                ...avatar3D,
+                textura_url: avatar3D.textura_url || null,
+                animaciones: anims?.map((a: any) => ({
+                  id: a.id,
+                  nombre: a.nombre,
+                  url: a.url,
+                  loop: a.loop ?? false,
+                  orden: a.orden ?? 0,
+                  strip_root_motion: a.strip_root_motion ?? false,
+                })) || [],
+              } as Avatar3DConfig;
             }
           }
         } catch (e) {

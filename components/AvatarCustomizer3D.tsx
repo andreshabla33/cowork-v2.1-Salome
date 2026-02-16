@@ -212,13 +212,35 @@ export const AvatarCustomizer3D: React.FC<AvatarCustomizer3DProps> = ({ compact 
       if (error) {
         console.error('Error updating avatar:', error);
       } else {
-        // Actualizar store para que el espacio virtual refleje el cambio
+        // Actualizar store con config completa (incluyendo animaciones y textura)
         if (selected) {
+          // Cargar animaciones y textura desde BD
+          const [animRes, avatarRes] = await Promise.all([
+            supabase.from('avatar_animaciones')
+              .select('id, nombre, url, loop, orden, strip_root_motion')
+              .eq('avatar_id', avatarId)
+              .eq('activo', true)
+              .order('orden', { ascending: true }),
+            supabase.from('avatares_3d')
+              .select('textura_url')
+              .eq('id', avatarId)
+              .maybeSingle(),
+          ]);
+
           useStore.getState().setAvatar3DConfig({
             id: selected.id,
             nombre: selected.nombre,
             modelo_url: selected.modelo_url,
             escala: parseFloat(selected.escala) || 1,
+            textura_url: avatarRes.data?.textura_url || null,
+            animaciones: animRes.data?.map((a: any) => ({
+              id: a.id,
+              nombre: a.nombre,
+              url: a.url,
+              loop: a.loop ?? false,
+              orden: a.orden ?? 0,
+              strip_root_motion: a.strip_root_motion ?? false,
+            })) || [],
           });
         }
         setAvatarSaved(true);

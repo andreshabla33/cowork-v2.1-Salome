@@ -178,63 +178,84 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
     });
   }, [avatarConfig?.textura_url]);
 
-  // Aplicar textura externa o respetar materiales originales
+  // Aplicar textura externa SOLO si existe (no tocar materiales originales del GLB)
   useEffect(() => {
+    if (!externalTexture) return;
     clone.traverse((child: any) => {
       if (child.isMesh || child.isSkinnedMesh) {
         const mat = child.material as THREE.MeshStandardMaterial;
         if (!mat) return;
-        if (externalTexture) {
-          mat.map = externalTexture;
-          mat.metalness = 0;
-          mat.roughness = 0.9;
-          mat.side = THREE.DoubleSide;
-          mat.needsUpdate = true;
-        } else {
-          if (skinColor && mat.name?.toLowerCase().includes('skin')) {
-            mat.color = new THREE.Color(skinColor);
-          }
-          if (clothingColor && mat.name?.toLowerCase().includes('cloth')) {
-            mat.color = new THREE.Color(clothingColor);
-          }
-          mat.metalness = Math.min(mat.metalness, 0.3);
-          mat.needsUpdate = true;
-        }
+        mat.map = externalTexture;
+        mat.metalness = 0;
+        mat.roughness = 0.9;
+        mat.side = THREE.DoubleSide;
+        mat.needsUpdate = true;
       }
     });
-  }, [clone, externalTexture, skinColor, clothingColor]);
+  }, [clone, externalTexture]);
 
   // ============== CARGA DINÁMICA DE ANIMACIONES (desde BD) ==============
   const [loadedAnimClips, setLoadedAnimClips] = useState<Record<string, THREE.AnimationClip>>({});
   const animConfigRef = useRef<string>('');
 
+  // Ref para trackear el avatar actual y evitar re-cargas innecesarias
+  const currentAvatarIdRef = useRef<string>('');
+
   useEffect(() => {
-    const animaciones = avatarConfig?.animaciones;
-    if (!animaciones || animaciones.length === 0 || boneNames.size === 0) {
-      setLoadedAnimClips({});
-      return;
-    }
+    const avatarId = avatarConfig?.id;
+    if (!avatarId || avatarId === 'default' || boneNames.size === 0) return;
 
-    // Evitar re-cargar si la config no cambió
-    const configKey = animaciones.map(a => a.url).join('|');
-    if (configKey === animConfigRef.current) return;
-    animConfigRef.current = configKey;
+    // Si ya cargamos para este avatar, no re-cargar
+    if (avatarId === currentAvatarIdRef.current && Object.keys(loadedAnimClips).length > 0) return;
 
-    let cancelled = false;
-    const loader = new GLTFLoader();
+    // Intentar usar animaciones del config, sino cargar de BD
+    const loadAnimations = async () => {
+      let animaciones = avatarConfig?.animaciones;
 
-    Promise.all(
-      animaciones.map(async (anim) => {
-        try {
-          const gltf = await loader.loadAsync(anim.url);
-          return { nombre: anim.nombre, clips: gltf.animations, strip: anim.strip_root_motion ?? false };
-        } catch (err) {
-          console.warn(`⚠️ Error loading animation ${anim.nombre}:`, err);
-          return null;
-        }
-      })
-    ).then((results) => {
-      if (cancelled) return;
+      // Si el config no trae animaciones, cargarlas directamente de BD
+      if (!animaciones || animaciones.length === 0) {
+        console.warn('🎬 Config sin animaciones, cargando de BD para', avatarConfig?.nombre);
+        const { data: anims } = await supabase
+          .from('avatar_animaciones')
+          .select('id, nombre, url, loop, orden, strip_root_motion')
+          .eq('avatar_id', avatarId)
+          .eq('activo', true)
+          .order('orden', { ascending: true });
+
+        if (!anims || anims.length === 0) return;
+        animaciones = anims.map((a: any) => ({
+          id: a.id,
+          nombre: a.nombre,
+          url: a.url,
+          loop: a.loop ?? false,
+          orden: a.orden ?? 0,
+          strip_root_motion: a.strip_root_motion ?? false,
+        }));
+      }
+
+      // Evitar re-cargar si la config no cambió
+      const configKey = animaciones.map(a => a.url).join('|');
+      if (configKey === animConfigRef.current) return;
+      animConfigRef.current = configKey;
+      currentAvatarIdRef.current = avatarId;
+
+      const loader = new GLTFLoader();
+      console.log('🎬 Cargando', animaciones.length, 'anims:', avatarConfig?.nombre);
+
+      const results = await Promise.all(
+        animaciones.map(async (anim) => {
+          try {
+            const gltf = await loader.loadAsync(anim.url);
+            return { nombre: anim.nombre, clips: gltf.animations, strip: anim.strip_root_motion ?? false };
+          } catch (err) {
+            console.warn(`  ❌ Error loading ${anim.nombre}:`, err);
+            return null;
+          }
+        })
+      );
+
+      // Solo aplicar si seguimos en el mismo avatar
+      if (currentAvatarIdRef.current !== avatarId) return;
       const clips: Record<string, THREE.AnimationClip> = {};
       results.forEach((r) => {
         if (r && r.clips.length > 0) {
@@ -243,11 +264,12 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
           clips[r.nombre] = clip;
         }
       });
+      console.log('🎬 Anims OK:', Object.keys(clips).join(','));
       setLoadedAnimClips(clips);
-    });
+    };
 
-    return () => { cancelled = true; };
-  }, [avatarConfig?.animaciones, boneNames]);
+    loadAnimations();
+  }, [avatarConfig?.id, avatarConfig?.animaciones, boneNames]);
 
   // Combinar animaciones: embedded del modelo + cargadas dinámicamente desde BD
   const allAnimations = useMemo(() => {
@@ -273,17 +295,17 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
   // Configurar animaciones usando el ref del grupo raíz
   const { actions } = useAnimations(allAnimations, groupRef);
   
-  // Cambiar animación según estado — con debounce para evitar cortes rápidos (estilo LOL/Roblox)
+  // Cambiar animación según estado — transiciones inmediatas al moverse, debounce solo al volver a idle
   const pendingAnimRef = useRef<{ anim: AnimationState; timer: ReturnType<typeof setTimeout> } | null>(null);
-  const CROSSFADE_DURATION = 0.4; // Transición suave de 400ms
-  const ANIM_DEBOUNCE_MS = 150; // Evitar cambios walk→idle→walk en <150ms
+  const CROSSFADE_FAST = 0.15; // Transición rápida para movimiento (idle→walk/run)
+  const CROSSFADE_SMOOTH = 0.3; // Transición suave para volver a idle o emotes
+  const IDLE_DEBOUNCE_MS = 100; // Solo debounce al volver a idle (evita walk→idle→walk flicker)
 
   useEffect(() => {
     if (!actions || Object.keys(actions).length === 0) return;
     
     const targetAnim = animationState;
     if (currentAnimation === targetAnim) {
-      // Cancelar pending si volvimos al estado actual
       if (pendingAnimRef.current) {
         clearTimeout(pendingAnimRef.current.timer);
         pendingAnimRef.current = null;
@@ -291,14 +313,11 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
       return;
     }
 
-    // Debounce: si es una transición entre loop animations (walk/idle/run), esperar un poco
-    const isLoopTransition = LOOP_ANIMATIONS.includes(targetAnim) && LOOP_ANIMATIONS.includes(currentAnimation);
-    
-    const applyTransition = () => {
+    const applyTransition = (fadeDuration: number) => {
       pendingAnimRef.current = null;
       const current = actions[currentAnimation];
       if (current) {
-        current.fadeOut(CROSSFADE_DURATION);
+        current.fadeOut(fadeDuration);
       }
       const next = actions[targetAnim];
       if (next) {
@@ -308,7 +327,7 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
           LOOP_ANIMATIONS.includes(targetAnim) ? Infinity : 1
         );
         next.clampWhenFinished = !LOOP_ANIMATIONS.includes(targetAnim);
-        next.fadeIn(CROSSFADE_DURATION).play();
+        next.fadeIn(fadeDuration).play();
         setCurrentAnimation(targetAnim);
       }
     };
@@ -319,15 +338,18 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
       pendingAnimRef.current = null;
     }
 
-    if (isLoopTransition) {
-      // Debounce para evitar cortes rápidos en transiciones loop
+    // Solo debounce al VOLVER a idle (evita flicker al dejar de caminar brevemente)
+    const isReturningToIdle = targetAnim === 'idle' && (currentAnimation === 'walk' || currentAnimation === 'run');
+    
+    if (isReturningToIdle) {
       pendingAnimRef.current = {
         anim: targetAnim,
-        timer: setTimeout(applyTransition, ANIM_DEBOUNCE_MS),
+        timer: setTimeout(() => applyTransition(CROSSFADE_SMOOTH), IDLE_DEBOUNCE_MS),
       };
     } else {
-      // Acciones especiales (dance, cheer, etc.) → aplicar inmediatamente
-      applyTransition();
+      // Movimiento y acciones → aplicar inmediatamente
+      const isStartingMovement = (targetAnim === 'walk' || targetAnim === 'run') && currentAnimation === 'idle';
+      applyTransition(isStartingMovement ? CROSSFADE_FAST : CROSSFADE_SMOOTH);
     }
 
     return () => {
@@ -338,12 +360,13 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
     };
   }, [animationState, actions, currentAnimation]);
 
-  // Iniciar animación idle por defecto
+  // Iniciar animación idle por defecto (re-ejecutar cuando loadedAnimClips cambie,
+  // porque useAnimations no cambia la referencia de actions al agregar clips nuevos)
   useEffect(() => {
     if (actions && actions['idle']) {
-      actions['idle'].play();
+      actions['idle'].reset().fadeIn(0.2).play();
     }
-  }, [actions]);
+  }, [actions, loadedAnimClips]);
 
   // Aplicar colores personalizados SOLO si se pasan explícitamente (respetar materiales originales del GLB)
   useEffect(() => {
