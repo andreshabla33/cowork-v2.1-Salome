@@ -202,19 +202,34 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
   const currentAvatarIdRef = useRef<string>('');
 
   useEffect(() => {
-    const avatarId = avatarConfig?.id;
-    if (!avatarId || avatarId === 'default' || boneNames.size === 0) return;
+    if (boneNames.size === 0) return;
+    let avatarId = avatarConfig?.id;
+    if (avatarId === 'default') return;
 
-    // Si ya cargamos para este avatar, no re-cargar
-    if (avatarId === currentAvatarIdRef.current && Object.keys(loadedAnimClips).length > 0) return;
+    // Si ya cargamos para este avatar (o default), no re-cargar
+    const cacheKey = avatarId || '_default_';
+    if (cacheKey === currentAvatarIdRef.current && Object.keys(loadedAnimClips).length > 0) return;
 
     // Intentar usar animaciones del config, sino cargar de BD
     const loadAnimations = async () => {
       let animaciones = avatarConfig?.animaciones;
 
+      // Si no hay avatarConfig (avatar remoto), obtener el primer avatar activo de BD
+      if (!avatarId) {
+        const { data: defaultAvatar } = await supabase
+          .from('avatares_3d')
+          .select('id')
+          .eq('activo', true)
+          .order('orden', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (!defaultAvatar) return;
+        avatarId = defaultAvatar.id;
+      }
+
       // Si el config no trae animaciones, cargarlas directamente de BD
       if (!animaciones || animaciones.length === 0) {
-        console.warn('🎬 Config sin animaciones, cargando de BD para', avatarConfig?.nombre);
+        console.warn('🎬 Config sin animaciones, cargando de BD para', avatarConfig?.nombre || 'avatar remoto');
         const { data: anims } = await supabase
           .from('avatar_animaciones')
           .select('id, nombre, url, loop, orden, strip_root_motion')
@@ -237,10 +252,10 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
       const configKey = animaciones.map(a => a.url).join('|');
       if (configKey === animConfigRef.current) return;
       animConfigRef.current = configKey;
-      currentAvatarIdRef.current = avatarId;
+      currentAvatarIdRef.current = cacheKey;
 
       const loader = new GLTFLoader();
-      console.log('🎬 Cargando', animaciones.length, 'anims:', avatarConfig?.nombre);
+      console.log('🎬 Cargando', animaciones.length, 'anims:', avatarConfig?.nombre || 'avatar remoto');
 
       const results = await Promise.all(
         animaciones.map(async (anim) => {
@@ -255,7 +270,7 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
       );
 
       // Solo aplicar si seguimos en el mismo avatar
-      if (currentAvatarIdRef.current !== avatarId) return;
+      if (currentAvatarIdRef.current !== cacheKey) return;
       const clips: Record<string, THREE.AnimationClip> = {};
       results.forEach((r) => {
         if (r && r.clips.length > 0) {
