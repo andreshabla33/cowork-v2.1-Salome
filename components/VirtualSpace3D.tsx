@@ -4601,9 +4601,16 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
             }
           }
         } else {
-          // No hay proximidad ni screen sharing - apagar cámara/mic
+          // Re-check: el ref pudo actualizarse desde que leímos shouldHaveStream al inicio
+          // (evita destruir stream por un render transitorio con valor stale)
+          await new Promise(r => setTimeout(r, 300));
+          if (shouldHaveStreamRef.current) {
+            console.log('ManageStream: stop cancelado — shouldHaveStream cambió a true durante wait');
+            return;
+          }
+          // Confirmar: realmente no se necesita stream
           if (activeStreamRef.current) {
-            console.log('Stopping camera/mic - no active call');
+            console.log('Stopping camera/mic - user disabled all media');
             
             const tracks = activeStreamRef.current.getTracks();
             
