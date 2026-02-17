@@ -343,7 +343,6 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
     });
     actionsRef.current = newActions;
     clipVersionRef.current++;
-    console.log('🎭 [MIXER] Actions rebuilt:', Object.keys(newActions).join(','), '| version:', clipVersionRef.current);
 
     // Iniciar idle por defecto
     if (newActions['idle']) {
@@ -377,7 +376,6 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
       }
       return;
     }
-    console.log('🎭 [ANIM TRANSITION]', currentAnimation, '→', targetAnim, '| actions:', Object.keys(actions).join(','));
 
     const ANIM_FALLBACKS: Record<string, string[]> = {
       cheer: ['wave', 'dance', 'victory', 'idle'],
@@ -416,7 +414,6 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
         );
         next.clampWhenFinished = !LOOP_ANIMATIONS.includes(resolvedAnim);
         next.fadeIn(fadeDuration).play();
-        console.log('🎭 [ANIM APPLIED]', resolvedAnim);
         setCurrentAnimation(resolvedAnim);
       }
     };

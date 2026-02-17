@@ -949,7 +949,6 @@ const Player: React.FC<PlayerProps> = ({ currentUser, setPosition, stream, showV
   
   // Sincronizar ref con state
   useEffect(() => {
-    console.log('🚶 [ANIM STATE]', effectiveAnimState, '| contextual:', contextualAnim, '| base:', animationState);
     animationStateRef.current = effectiveAnimState;
   }, [effectiveAnimState]);
 
