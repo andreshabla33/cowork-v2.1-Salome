@@ -15,7 +15,7 @@
 import { supabase } from './supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
-export type EventoRealtime = 'movement' | 'offer' | 'answer' | 'ice-candidate' | 'reaction' | 'chat' | 'wave';
+export type EventoRealtime = 'movement' | 'offer' | 'answer' | 'ice-candidate' | 'reaction' | 'chat' | 'wave' | 'lock_conversation';
 
 export interface RealtimeChunkConfig {
   espacioId: string;
@@ -122,7 +122,7 @@ export class RealtimeChunkManager {
     const nombre = this.nombreCanal(chunkClave);
     const canal = supabase.channel(nombre);
 
-    const eventos: EventoRealtime[] = ['movement', 'offer', 'answer', 'ice-candidate', 'reaction', 'chat', 'wave'];
+    const eventos: EventoRealtime[] = ['movement', 'offer', 'answer', 'ice-candidate', 'reaction', 'chat', 'wave', 'lock_conversation'];
 
     for (const evento of eventos) {
       canal.on('broadcast', { event: evento }, ({ payload }) => {

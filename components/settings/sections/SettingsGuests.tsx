@@ -44,7 +44,27 @@ export const SettingsGuests: React.FC<SettingsGuestsProps> = ({
     return unsubscribe;
   }, []);
 
+  // Cargar settings del espacio desde BD al montar
   useEffect(() => {
+    const loadFromDB = async () => {
+      if (!workspaceId) return;
+      const { data } = await supabase
+        .from('espacios_trabajo')
+        .select('configuracion')
+        .eq('id', workspaceId)
+        .single();
+      if (data?.configuracion?.guests) {
+        const g = data.configuracion.guests;
+        onSettingsChange({
+          guestCheckInEnabled: g.checkInEnabled ?? settings.guestCheckInEnabled,
+          requireApproval: g.requireApproval ?? settings.requireApproval,
+          guestAccessDuration: g.accessDuration ?? settings.guestAccessDuration,
+          allowGuestChat: g.allowChat ?? settings.allowGuestChat,
+          allowGuestVideo: g.allowVideo ?? settings.allowGuestVideo,
+        });
+      }
+    };
+    loadFromDB();
     loadGuests();
   }, [workspaceId]);
 
@@ -79,7 +99,26 @@ export const SettingsGuests: React.FC<SettingsGuestsProps> = ({
   };
 
   const updateSetting = <K extends keyof GuestsSettings>(key: K, value: GuestsSettings[K]) => {
-    onSettingsChange({ ...settings, [key]: value });
+    const newSettings = { ...settings, [key]: value };
+    onSettingsChange(newSettings);
+    // Persistir en BD (fire-and-forget)
+    if (workspaceId) {
+      supabase
+        .from('espacios_trabajo')
+        .update({
+          configuracion: {
+            guests: {
+              checkInEnabled: newSettings.guestCheckInEnabled,
+              requireApproval: newSettings.requireApproval,
+              accessDuration: newSettings.guestAccessDuration,
+              allowChat: newSettings.allowGuestChat,
+              allowVideo: newSettings.allowGuestVideo,
+            }
+          }
+        })
+        .eq('id', workspaceId)
+        .then();
+    }
   };
 
   const durationOptions = [

@@ -80,7 +80,8 @@ export const MeetingRooms: React.FC<{ onJoinRoom?: (roomId: string) => void }> =
         sala_id: data.id,
         usuario_id: currentUser.id,
         mic_activo: true,
-        cam_activa: false
+        cam_activa: false,
+        ultima_actividad: new Date().toISOString()
       });
       if (joinError) console.error('Error auto-joining room:', joinError);
       
@@ -106,7 +107,8 @@ export const MeetingRooms: React.FC<{ onJoinRoom?: (roomId: string) => void }> =
       sala_id: roomId,
       usuario_id: currentUser.id,
       mic_activo: true,
-      cam_activa: false
+      cam_activa: false,
+      ultima_actividad: new Date().toISOString()
     }, { onConflict: 'sala_id,usuario_id' });
 
     if (error) {

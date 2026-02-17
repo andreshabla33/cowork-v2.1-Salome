@@ -15,7 +15,7 @@ interface Notification {
 interface AppState {
   theme: ThemeType;
   view: 'dashboard' | 'workspace' | 'invitation' | 'loading' | 'onboarding' | 'onboarding_creador';
-  activeSubTab: 'space' | 'tasks' | 'miembros' | 'settings' | 'builder' | 'chat' | 'avatar' | 'calendar' | 'grabaciones';
+  activeSubTab: 'space' | 'tasks' | 'miembros' | 'settings' | 'builder' | 'chat' | 'avatar' | 'calendar' | 'grabaciones' | 'metricas';
   currentUser: User;
   users: User[];
   onlineUsers: User[];

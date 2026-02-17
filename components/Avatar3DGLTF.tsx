@@ -45,10 +45,28 @@ const DEFAULT_MODEL_URL = `${STORAGE_BASE}/Monica_Idle.glb`;
 // Animaciones que hacen loop
 const LOOP_ANIMATIONS: AnimationState[] = ['idle', 'walk', 'run', 'dance'];
 
-// Remapeo de tracks: Mixamo → huesos del modelo (soporta Mixamo directo y Blender FBX)
+// Normalizar nombre de hueso: quitar prefijos comunes de Mixamo, Meshy AI, Blender, etc.
+function normalizeBoneName(name: string): string {
+  let n = name;
+  // Quitar prefijo Armature| o Armature/ (Blender/Meshy)
+  n = n.replace(/^Armature[|/]/, '');
+  // Quitar prefijo mixamorig: (con dos puntos — Meshy AI) o mixamorig (sin separador — Mixamo directo)
+  n = n.replace(/^mixamorig[:]?/, '');
+  // Quitar prefijo Character_ o Root_ (otros exportadores)
+  n = n.replace(/^(Character_|Root_)/, '');
+  return n;
+}
+
+// Remapeo de tracks: Mixamo/Meshy/Blender → huesos del modelo
 // stripRootMotion: elimina position tracks del Hips para evitar saltos al hacer loop (walk/run)
 function remapAnimationTracks(clip: THREE.AnimationClip, boneNames: Set<string>, stripRootMotion = false): THREE.AnimationClip {
   const remapped = clip.clone();
+
+  // Pre-calcular mapa normalizado de huesos del modelo para matching rápido
+  const normalizedBoneMap = new Map<string, string>();
+  for (const bn of boneNames) {
+    normalizedBoneMap.set(normalizeBoneName(bn).toLowerCase(), bn);
+  }
 
   remapped.tracks = remapped.tracks.map(track => {
     const dotIdx = track.name.indexOf('.');
@@ -59,21 +77,18 @@ function remapAnimationTracks(clip: THREE.AnimationClip, boneNames: Set<string>,
     // Ya coincide con un hueso del modelo
     if (boneNames.has(boneName)) return track;
 
-    // Quitar prefijo mixamorig
-    let mapped = boneName;
-    if (boneName.startsWith('mixamorig')) {
-      mapped = boneName.replace('mixamorig', '');
-    }
-
-    // Match directo (sin prefijo)
-    if (boneNames.has(mapped)) {
-      track.name = mapped + property;
+    // Normalizar y buscar match
+    const normalized = normalizeBoneName(boneName).toLowerCase();
+    const matchedBone = normalizedBoneMap.get(normalized);
+    if (matchedBone) {
+      track.name = matchedBone + property;
       return track;
     }
 
-    // Match case-insensitive
+    // Match parcial: el nombre normalizado del track contiene o es contenido por algún hueso
     for (const bn of boneNames) {
-      if (bn.toLowerCase() === mapped.toLowerCase()) {
+      const bnNorm = normalizeBoneName(bn).toLowerCase();
+      if (bnNorm === normalized || (bnNorm.length > 3 && normalized.includes(bnNorm)) || (normalized.length > 3 && bnNorm.includes(normalized))) {
         track.name = bn + property;
         return track;
       }
@@ -94,6 +109,10 @@ function remapAnimationTracks(clip: THREE.AnimationClip, boneNames: Set<string>,
     }
     return true;
   });
+
+  if (remapped.tracks.length === 0 && clip.tracks.length > 0) {
+    console.warn(`⚠️ remapAnimationTracks: ${clip.name} — 0/${clip.tracks.length} tracks matched. Posible mismatch de huesos.`);
+  }
   return remapped;
 }
 

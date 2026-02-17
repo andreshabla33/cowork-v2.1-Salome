@@ -13,6 +13,7 @@ import '@livekit/components-styles';
 import { Room, Track, RoomEvent } from 'livekit-client';
 import { useStore } from '@/store/useStore';
 import { supabase } from '@/lib/supabase';
+import { otorgarXP, XP_POR_ACCION } from '@/lib/gamificacion';
 import { MeetingControlBar, TipoReunion } from './MeetingControlBar';
 import { TipoReunionUnificado, InvitadoExterno } from '@/types/meeting-types';
 import { CargoLaboral, TipoGrabacionDetallado } from '../recording/types/analysis';
@@ -205,6 +206,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   // Solo se ejecuta una vez cuando tokenData está listo
   const [salaInfoFetched, setSalaInfoFetched] = useState(false);
   const [invitadoExterno, setInvitadoExterno] = useState<InvitadoExterno | null>(null);
+  const [guestPermissions, setGuestPermissions] = useState<{ allowChat: boolean; allowVideo: boolean }>({ allowChat: true, allowVideo: true });
   
   useEffect(() => {
     if (propTipoReunion || salaInfoFetched || !tokenData) return;
@@ -259,7 +261,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
         else if (salaId) {
           const { data: sala } = await supabase
             .from('salas_reunion')
-            .select('tipo, configuracion')
+            .select('tipo, configuracion, espacio_id')
             .eq('id', salaId)
             .single();
           
@@ -280,6 +282,21 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
             if (config?.invitados_externos?.[0]) {
               setInvitadoExterno(config.invitados_externos[0]);
             }
+
+            // Cargar guest permissions desde configuración del espacio
+            if (sala.espacio_id) {
+              const { data: espacio } = await supabase
+                .from('espacios_trabajo')
+                .select('configuracion')
+                .eq('id', sala.espacio_id)
+                .single();
+              if (espacio?.configuracion?.guests) {
+                setGuestPermissions({
+                  allowChat: espacio.configuracion.guests.allowChat ?? true,
+                  allowVideo: espacio.configuracion.guests.allowVideo ?? true,
+                });
+              }
+            }
           }
         }
       } catch (err) {
@@ -294,6 +311,32 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
 
   // La grabación ahora la maneja RecordingManager dentro de MeetingRoomContent
 
+  // ============== HEARTBEAT (best practice: Zoom/Gather/LiveKit) ==============
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const HEARTBEAT_INTERVAL_MS = 60_000; // Ping cada 60s
+
+  const startHeartbeat = useCallback(() => {
+    if (tokenInvitacion || !currentUser) return; // No heartbeat para invitados externos
+    // Heartbeat inmediato
+    supabase.rpc('heartbeat_participante', { p_sala_id: salaId, p_usuario_id: currentUser.id }).then();
+    // Intervalo
+    heartbeatRef.current = setInterval(() => {
+      supabase.rpc('heartbeat_participante', { p_sala_id: salaId, p_usuario_id: currentUser.id }).then();
+    }, HEARTBEAT_INTERVAL_MS);
+  }, [salaId, currentUser, tokenInvitacion]);
+
+  const stopHeartbeat = useCallback(() => {
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    }
+  }, []);
+
+  // Cleanup heartbeat al desmontar
+  useEffect(() => {
+    return () => stopHeartbeat();
+  }, [stopHeartbeat]);
+
   // Manejar eventos de la sala
   const handleRoomConnected = useCallback(() => {
     console.log('Conectado a la sala');
@@ -302,11 +345,19 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     if (!tokenInvitacion && currentUser) {
       supabase
         .from('participantes_sala')
-        .update({ estado_participante: 'en_sala' })
+        .update({ estado_participante: 'en_sala', ultima_actividad: new Date().toISOString() })
         .eq('sala_id', salaId)
         .eq('usuario_id', currentUser.id);
     }
-  }, [salaId, currentUser, tokenInvitacion]);
+
+    // Iniciar heartbeat
+    startHeartbeat();
+
+    // XP por reunión asistida (fire-and-forget, una sola vez al conectar)
+    if (currentUser?.id && activeWorkspace?.id) {
+      otorgarXP(currentUser.id, activeWorkspace.id, XP_POR_ACCION.reunion_asistida, 'reunion_asistida').then();
+    }
+  }, [salaId, currentUser, tokenInvitacion, startHeartbeat, activeWorkspace?.id]);
 
   const userInitiatedLeaveRef = useRef(false);
 
@@ -333,6 +384,9 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
   const handleRoomDisconnected = useCallback(() => {
     console.log('Desconectado de la sala');
     
+    // Detener heartbeat
+    stopHeartbeat();
+
     // Actualizar estado en Supabase
     if (!tokenInvitacion && currentUser) {
       supabase
@@ -349,7 +403,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
     if (userInitiatedLeaveRef.current) {
       onLeave?.();
     }
-  }, [salaId, currentUser, tokenInvitacion, onLeave]);
+  }, [salaId, currentUser, tokenInvitacion, onLeave, stopHeartbeat]);
 
   // Loading state
   if (loading) {
@@ -416,6 +470,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({
           userAvatar={currentUser?.profilePhoto}
           cargoUsuario={cargoUsuario}
           invitadosExternos={invitadoExterno ? [invitadoExterno] : []}
+          guestPermissions={guestPermissions}
         />
         <RoomAudioRenderer />
       </LiveKitRoom>
@@ -440,6 +495,7 @@ interface MeetingRoomContentProps {
   userAvatar?: string;
   cargoUsuario: CargoLaboral;
   invitadosExternos?: InvitadoExterno[];
+  guestPermissions?: { allowChat: boolean; allowVideo: boolean };
 }
 
 const MeetingRoomContent: React.FC<MeetingRoomContentProps> = ({ 
@@ -458,6 +514,7 @@ const MeetingRoomContent: React.FC<MeetingRoomContentProps> = ({
   userAvatar,
   cargoUsuario,
   invitadosExternos = [],
+  guestPermissions = { allowChat: true, allowVideo: true },
 }) => {
   const room = useRoomContext();
   const { localParticipant } = useLocalParticipant();
@@ -886,8 +943,8 @@ const MeetingRoomContent: React.FC<MeetingRoomContentProps> = ({
         )}
       </div>
 
-      {/* Panel de Chat - Estilos mejorados */}
-      {showChat && (
+      {/* Panel de Chat - Estilos mejorados (oculto si invitado externo sin permiso) */}
+      {showChat && !(isExternalGuest && !guestPermissions.allowChat) && (
         <div className="absolute top-0 right-0 bottom-0 w-80 bg-zinc-900/98 backdrop-blur-xl border-l border-white/10 flex flex-col z-[100]">
           <div className="p-4 border-b border-white/10 flex items-center justify-between shrink-0">
             <h3 className="text-white font-bold text-sm">Chat de la reunión</h3>

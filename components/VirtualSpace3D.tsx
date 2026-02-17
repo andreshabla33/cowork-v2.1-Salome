@@ -47,6 +47,8 @@ const WORLD_SIZE = 100;
 const PROXIMITY_RADIUS = 180; // 180px para detectar proximidad
 const AUDIO_SPATIAL_RADIUS_FACTOR = 2; // Audio espacial se escucha hasta 2x el radio de proximidad
 const TELEPORT_DISTANCE = 15; // Distancia 3D para activar teletransportación
+const CHAIR_SIT_RADIUS = 1.5; // Radio en unidades 3D para activar sit contextual cerca de sillas
+const CHAIR_POSITIONS_3D = [[8, 8], [12, 8], [8, 12], [12, 12], [8, 10], [12, 10]]; // [x, z] en world units
 const ZONA_SOLICITUD_RADIO = 140; // Distancia en px para solicitar acceso a una zona privada
 const LOD_NEAR_DISTANCE = 25;
 const LOD_MID_DISTANCE = 60;
@@ -855,9 +857,10 @@ interface PlayerProps {
   empresasAutorizadas?: string[];
   usersInCallIds?: Set<string>;
   mobileInputRef?: React.MutableRefObject<JoystickInput>;
+  onXPEvent?: (accion: string, cooldownMs?: number) => void;
 }
 
-const Player: React.FC<PlayerProps> = ({ currentUser, setPosition, stream, showVideoBubble = true, message, orbitControlsRef, reactions = [], onClickAvatar, moveTarget, onReachTarget, teleportTarget, onTeleportDone, broadcastMovement, moveSpeed, runSpeed, ecsStateRef, onPositionUpdate, zonasEmpresa = [], empresasAutorizadas = [], usersInCallIds, mobileInputRef }) => {
+const Player: React.FC<PlayerProps> = ({ currentUser, setPosition, stream, showVideoBubble = true, message, orbitControlsRef, reactions = [], onClickAvatar, moveTarget, onReachTarget, teleportTarget, onTeleportDone, broadcastMovement, moveSpeed, runSpeed, ecsStateRef, onPositionUpdate, zonasEmpresa = [], empresasAutorizadas = [], usersInCallIds, mobileInputRef, onXPEvent }) => {
   const groupRef = useRef<THREE.Group>(null);
   // Refs para acceso seguro dentro de useFrame
   const zonasRef = useRef(zonasEmpresa);
@@ -926,6 +929,8 @@ const Player: React.FC<PlayerProps> = ({ currentUser, setPosition, stream, showV
     // Si hay nuevos usuarios y no estamos en movimiento → wave
     if (newEntries.length > 0 && animationStateRef.current !== 'walk' && animationStateRef.current !== 'run') {
       setContextualAnim('wave');
+      // XP por saludo automático (throttle 30s)
+      onXPEvent?.('saludo_wave', 30000);
       if (contextualTimerRef.current) clearTimeout(contextualTimerRef.current);
       contextualTimerRef.current = setTimeout(() => {
         setContextualAnim(null);
@@ -935,6 +940,49 @@ const Player: React.FC<PlayerProps> = ({ currentUser, setPosition, stream, showV
       if (contextualTimerRef.current) clearTimeout(contextualTimerRef.current);
     };
   }, [usersInCallIds]);
+
+  // Fase 2: Sit contextual — sentarse automáticamente al estar idle cerca de una silla
+  const sitCheckRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    if (sitCheckRef.current) clearInterval(sitCheckRef.current);
+    sitCheckRef.current = setInterval(() => {
+      if (animationStateRef.current !== 'idle' || contextualAnim) return;
+      const px = positionRef.current?.x;
+      const pz = positionRef.current?.z;
+      if (px == null || pz == null) return;
+      for (const [cx, cz] of CHAIR_POSITIONS_3D) {
+        const dx = px - cx, dz = pz - cz;
+        if (Math.sqrt(dx * dx + dz * dz) < CHAIR_SIT_RADIUS) {
+          setContextualAnim('sit');
+          return;
+        }
+      }
+      // Si estaba sentado contextualmente y se alejó de la silla, cancelar
+    }, 1000);
+    return () => { if (sitCheckRef.current) clearInterval(sitCheckRef.current); };
+  }, [contextualAnim]);
+
+  // Fase 3: Reacciones desde chat — detectar emojis en mensajes y disparar animación
+  const prevMessageRef = useRef<string | undefined>();
+  useEffect(() => {
+    if (!message || message === prevMessageRef.current) return;
+    prevMessageRef.current = message;
+    const EMOJI_ANIM_MAP: [RegExp, AnimationState][] = [
+      [/👋|🤚|✋/, 'wave'],
+      [/🎉|🥳|🎊/, 'cheer'],
+      [/💃|🕺|🪩/, 'dance'],
+      [/🏆|🥇|✌️/, 'victory'],
+      [/🦘|⬆️|🚀/, 'jump'],
+    ];
+    for (const [pattern, anim] of EMOJI_ANIM_MAP) {
+      if (pattern.test(message)) {
+        setContextualAnim(anim);
+        if (contextualTimerRef.current) clearTimeout(contextualTimerRef.current);
+        contextualTimerRef.current = setTimeout(() => setContextualAnim(null), 3000);
+        break;
+      }
+    }
+  }, [message]);
 
   // Cancelar animación contextual si el usuario se mueve
   useEffect(() => {
@@ -1000,6 +1048,8 @@ const Player: React.FC<PlayerProps> = ({ currentUser, setPosition, stream, showV
         setTeleportOrigin(null);
         setTeleportDest(null);
         if (onTeleportDone) onTeleportDone();
+        // XP por teleport (throttle 5s)
+        onXPEvent?.('teleport', 5000);
       }, 400);
     }, 300);
 
@@ -1380,9 +1430,10 @@ interface SceneProps {
   empresasAutorizadas?: string[];
   mobileInputRef?: React.MutableRefObject<JoystickInput>;
   enableDayNightCycle?: boolean;
+  onXPEvent?: (accion: string, cooldownMs?: number) => void;
 }
 
-const Scene: React.FC<SceneProps> = ({ currentUser, onlineUsers, setPosition, theme, orbitControlsRef, stream, remoteStreams, showVideoBubbles = true, localMessage, remoteMessages, localReactions, remoteReaction, onClickAvatar, moveTarget, onReachTarget, onDoubleClickFloor, onTapFloor, teleportTarget, onTeleportDone, showFloorGrid = true, showNamesAboveAvatars = true, cameraSensitivity = 5, invertYAxis = false, cameraMode = 'free', realtimePositionsRef, interpolacionWorkerRef, posicionesInterpoladasRef, ecsStateRef, broadcastMovement, moveSpeed, runSpeed, zonasEmpresa = [], onZoneCollision, usersInCallIds, usersInAudioRangeIds, empresasAutorizadas = [], mobileInputRef, enableDayNightCycle = false }) => {
+const Scene: React.FC<SceneProps> = ({ currentUser, onlineUsers, setPosition, theme, orbitControlsRef, stream, remoteStreams, showVideoBubbles = true, localMessage, remoteMessages, localReactions, remoteReaction, onClickAvatar, moveTarget, onReachTarget, onDoubleClickFloor, onTapFloor, teleportTarget, onTeleportDone, showFloorGrid = true, showNamesAboveAvatars = true, cameraSensitivity = 5, invertYAxis = false, cameraMode = 'free', realtimePositionsRef, interpolacionWorkerRef, posicionesInterpoladasRef, ecsStateRef, broadcastMovement, moveSpeed, runSpeed, zonasEmpresa = [], onZoneCollision, usersInCallIds, usersInAudioRangeIds, empresasAutorizadas = [], mobileInputRef, enableDayNightCycle = false, onXPEvent }) => {
   const gridColor = theme === 'arcade' ? '#00ff41' : '#6366f1';
   const { camera } = useThree();
   const frustumRef = useRef(new THREE.Frustum());
@@ -1636,6 +1687,7 @@ const Scene: React.FC<SceneProps> = ({ currentUser, onlineUsers, setPosition, th
         empresasAutorizadas={empresasAutorizadas}
         usersInCallIds={usersInCallIds}
         mobileInputRef={mobileInputRef}
+        onXPEvent={onXPEvent}
       />
       
       {/* Cámara que sigue al jugador — DEBE montarse DESPUÉS de Player para que useFrame lea posición actualizada */}
@@ -2147,6 +2199,9 @@ interface VirtualSpace3DProps {
   theme?: string;
   isGameHubOpen?: boolean;
   isPlayingGame?: boolean;
+  showroomMode?: boolean;
+  showroomDuracionMin?: number;
+  showroomNombreVisitante?: string;
 }
 
 // ICE Servers para WebRTC - Servidores STUN/TURN actualizados
@@ -2180,7 +2235,7 @@ const ICE_SERVERS = [
   },
 ];
 
-const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameHubOpen = false, isPlayingGame = false }) => {
+const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameHubOpen = false, isPlayingGame = false, showroomMode = false, showroomDuracionMin = 5, showroomNombreVisitante }) => {
   const { currentUser, onlineUsers, setPosition, activeWorkspace, toggleMic, toggleCamera, toggleScreenShare, togglePrivacy, setPrivacy, session, setActiveSubTab, setActiveChatGroupId, activeSubTab, empresasAutorizadas, setEmpresasAutorizadas } = useStore();
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [processedStream, setProcessedStream] = useState<MediaStream | null>(null); // Stream con efectos de fondo
@@ -2194,6 +2249,16 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
   const [showEmoteWheel, setShowEmoteWheel] = useState(false);
   const [showGamificacion, setShowGamificacion] = useState(false);
   const isMobile = useMemo(() => isTouchDevice(), []);
+  // === XP TRACKING EN TIEMPO REAL (throttled, fire-and-forget) ===
+  const xpThrottleRef = useRef<Record<string, number>>({});
+  const xpLoginRegisteredRef = useRef(false);
+  const grantXP = useCallback((accion: keyof typeof XP_POR_ACCION, cooldownMs: number = 10000) => {
+    if (!session?.user?.id || !activeWorkspace?.id) return;
+    const now = Date.now();
+    if (xpThrottleRef.current[accion] && now - xpThrottleRef.current[accion] < cooldownMs) return;
+    xpThrottleRef.current[accion] = now;
+    otorgarXP(session.user.id, activeWorkspace.id, XP_POR_ACCION[accion], accion).then();
+  }, [session?.user?.id, activeWorkspace?.id]);
   // Registrar Service Worker para PWA
   useEffect(() => {
     if ('serviceWorker' in navigator) {
@@ -2663,6 +2728,12 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
     };
     
     cargarCargo();
+
+    // XP: registrar login diario al entrar al espacio (una sola vez por sesión)
+    if (!xpLoginRegisteredRef.current && session?.user?.id && activeWorkspace?.id) {
+      xpLoginRegisteredRef.current = true;
+      registrarLoginDiario(session.user.id, activeWorkspace.id).then();
+    }
   }, [session?.user?.id, activeWorkspace?.id]);
 
   useEffect(() => {
@@ -3344,12 +3415,25 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
     const idsPreviosProximidad = livekitSubscribedIdsRef.current;
     const idsPreviosAudio = livekitAudioOnlyIdsRef.current;
 
+    // Check: ¿Hay alguna conversación bloqueada que me excluya?
+    const idsBloqueados = new Set<string>();
+    conversacionesBloqueadasRemoto.forEach((participants, lockerId) => {
+      if (!session?.user?.id || participants.includes(session.user.id)) return;
+      // Yo NO soy participante → bloquear suscripción a estos usuarios
+      participants.forEach(pid => idsBloqueados.add(pid));
+      idsBloqueados.add(lockerId);
+    });
+
     // === NIVEL 1: Proximidad completa (audio + video) ===
     idsEnProximidad.forEach(userId => {
+      // No suscribir si el usuario está en una conversación bloqueada que me excluye
+      if (idsBloqueados.has(userId)) {
+        console.log(`[LIVEKIT BLOCKED] ${userId} — conversación bloqueada, no suscribir`);
+        return;
+      }
       if (!idsPreviosProximidad.has(userId)) {
         const participant = room.getParticipantByIdentity(userId);
         if (participant) {
-          // Si estaba en audio-only, ya tiene audio suscrito → solo agregar video
           const wasAudioOnly = idsPreviosAudio.has(userId);
           let subsCount = 0;
           participant.trackPublications.forEach(pub => {
@@ -3365,6 +3449,8 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
 
     // === NIVEL 2: Rango espacial (audio + video para cam bubble a distancia media) ===
     idsEnAudioRange.forEach(userId => {
+      // No suscribir si conversación bloqueada
+      if (idsBloqueados.has(userId)) return;
       // Bug 3 Fix: Evitar race condition. Si ya está en proximidad, NO suscribir como rango espacial (ya está en Nivel 1)
       if (!idsPreviosAudio.has(userId) && !idsEnProximidad.has(userId) && !idsPreviosProximidad.has(userId)) {
         const participant = room.getParticipantByIdentity(userId);
@@ -3405,7 +3491,7 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
 
     livekitSubscribedIdsRef.current = idsEnProximidad;
     livekitAudioOnlyIdsRef.current = idsEnAudioRange;
-  }, [USAR_LIVEKIT, livekitConnected, usersInCall, usersInAudioRange]);
+  }, [USAR_LIVEKIT, livekitConnected, usersInCall, usersInAudioRange, conversacionesBloqueadasRemoto]);
 
   // Suscribir tracks nuevos de participantes ya en proximidad o rango de audio
   useEffect(() => {
@@ -3625,6 +3711,24 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
       return;
     }
 
+    if (mensaje.type === 'lock_conversation') {
+      if (mensaje.payload.by === session.user.id) return;
+      if (mensaje.payload.locked) {
+        setConversacionesBloqueadasRemoto(prev => {
+          const next = new Map(prev);
+          next.set(mensaje.payload.by, mensaje.payload.participants || []);
+          return next;
+        });
+      } else {
+        setConversacionesBloqueadasRemoto(prev => {
+          const next = new Map(prev);
+          next.delete(mensaje.payload.by);
+          return next;
+        });
+      }
+      return;
+    }
+
     if (mensaje.type === 'movement') {
       if (mensaje.payload.id === session.user.id) return;
       if (!usuariosVisiblesRef.current.has(mensaje.payload.id)) return;
@@ -3669,6 +3773,42 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
       room.off(RoomEvent.DataReceived, manejarData);
     };
   }, [USAR_LIVEKIT, livekitConnected, manejarEventoInstantaneo]);
+
+  // === ESTADOS DE PRIVACIDAD DE PROXIMIDAD (patrón Gather) ===
+  const [conversacionBloqueada, setConversacionBloqueada] = useState(false);
+  const [conversacionesBloqueadasRemoto, setConversacionesBloqueadasRemoto] = useState<Map<string, string[]>>(new Map());
+  const [proximidadNotificada, setProximidadNotificada] = useState(false);
+  const proximidadNotificadaRef = useRef(false);
+
+  // Función para bloquear/desbloquear conversación de proximidad (patrón Gather: locked conversation)
+  const bloquearConversacion = useCallback(() => {
+    const newLocked = !conversacionBloqueada;
+    setConversacionBloqueada(newLocked);
+    const participantIds = [session?.user?.id, ...usersInCall.map(u => u.id)].filter(Boolean) as string[];
+    const payload = { locked: newLocked, by: session?.user?.id, participants: participantIds };
+    // Broadcast via LiveKit data channel
+    enviarDataLivekit({ type: 'lock_conversation', payload });
+    // Fallback: broadcast via Realtime
+    if (webrtcChannelRef.current) {
+      webrtcChannelRef.current.send({ type: 'broadcast', event: 'lock_conversation', payload });
+    }
+    console.log(`[LOCK] Conversación ${newLocked ? 'bloqueada' : 'desbloqueada'} — participantes:`, participantIds);
+  }, [conversacionBloqueada, session?.user?.id, usersInCall, enviarDataLivekit]);
+
+  // Check: ¿El usuario actual está intentando acercarse a una conversación bloqueada?
+  const conversacionProximaBloqueada = useMemo(() => {
+    if (!session?.user?.id || conversacionesBloqueadasRemoto.size === 0) return null;
+    for (const [lockerId, participants] of conversacionesBloqueadasRemoto) {
+      // Si yo soy participante, no estoy bloqueado
+      if (participants.includes(session.user.id)) continue;
+      // Si alguno de los usuarios en mi proximidad es participante de esta conversación bloqueada
+      const usuarioBloqueado = usersInCall.find(u => participants.includes(u.id) || u.id === lockerId);
+      if (usuarioBloqueado) {
+        return { lockerId, participants, nombre: usuarioBloqueado.name };
+      }
+    }
+    return null;
+  }, [conversacionesBloqueadasRemoto, usersInCall, session?.user?.id]);
 
   // Función para enviar wave a un usuario
   const handleWaveUser = useCallback((userId: string) => {
@@ -3742,20 +3882,24 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
     peerVideoTrackCountRef.current.clear();
   }, [USAR_LIVEKIT]);
 
-  // Activar mic/cam cuando hay usuarios cerca (respetando settings de reuniones)
+  // Proximidad: NO auto-activar mic/cam (patrón Gather — privacidad por defecto)
+  // El usuario debe activar mic/cam manualmente para hablar
   useEffect(() => {
     if (hasActiveCall) {
-      // Respetar configuración de "mic apagado al entrar" y "cámara apagada al entrar"
-      if (!meetingsSettings.autoMuteOnJoin && !currentUser.isMicOn) toggleMic();
-      if (!meetingsSettings.autoCameraOffOnJoin && !currentUser.isCameraOn) toggleCamera();
-      
-      // Notificación desktop cuando alguien se acerca
-      if (notifSettings.nearbyUserSound) {
-        sendDesktopNotification('Usuario cercano', `${usersInCall[0]?.name || 'Alguien'} está cerca de ti`);
+      // Notificación desktop cuando alguien se acerca (sin auto-activar mic/cam)
+      if (!proximidadNotificadaRef.current) {
+        proximidadNotificadaRef.current = true;
+        setProximidadNotificada(true);
+        if (notifSettings.nearbyUserSound) {
+          sendDesktopNotification('Usuario cercano', `${usersInCall[0]?.name || 'Alguien'} está cerca — activa mic/cam para hablar`);
+        }
       }
     } else {
-      // Apagar todo cuando no hay usuarios cerca
       if (currentUser.isPrivate) setPrivacy(false);
+      if (conversacionBloqueada) setConversacionBloqueada(false);
+      proximidadNotificadaRef.current = false;
+      setProximidadNotificada(false);
+      setConversacionesBloqueadasRemoto(new Map());
     }
   }, [hasActiveCall]);
 
@@ -3845,9 +3989,12 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
       await ChatService.sendMessage(content, session.user.id, activeWorkspace?.id || '', recipientIds);
     }
     
+    // 4. XP por mensaje de chat (throttle 5s)
+    grantXP('mensaje_chat', 5000);
+    
     setChatInput('');
     setShowChat(false);
-  }, [chatInput, session?.user?.id, currentUser.name, usersInCall, activeWorkspace?.id, enviarDataLivekit]);
+  }, [chatInput, session?.user?.id, currentUser.name, usersInCall, activeWorkspace?.id, enviarDataLivekit, grantXP]);
 
   // Toggle grabación
   const handleToggleRecording = useCallback(async () => {
@@ -4760,6 +4907,7 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
             empresasAutorizadas={empresasAutorizadas}
             mobileInputRef={mobileInputRef}
             enableDayNightCycle={enableDayNightCycle}
+            onXPEvent={grantXP}
             onTapFloor={isMobile ? (point) => {
               // Mobile: single tap = walk/teleport (misma lógica que double-click en desktop)
               const playerX = (currentUserEcs.x || 400) / 16;
@@ -4851,8 +4999,109 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
         />
       )}
 
-      {/* Barra de Controles Inferior (Estilo 2026) */}
-      <BottomControlBar
+      {/* Banner Showroom Mode */}
+      {showroomMode && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-2.5 rounded-2xl bg-gradient-to-r from-purple-600/90 to-indigo-600/90 backdrop-blur-xl border border-white/20 shadow-2xl">
+          <span className="text-lg">🏢</span>
+          <div>
+            <p className="text-white text-sm font-bold">Modo Demo{showroomNombreVisitante ? ` — ${showroomNombreVisitante}` : ''}</p>
+            <p className="text-white/60 text-[10px]">Exploración del espacio virtual ({showroomDuracionMin} min)</p>
+          </div>
+        </div>
+      )}
+
+      {/* Banner de proximidad: notificación + lock conversation (patrón Gather) */}
+      {hasActiveCall && !showroomMode && (
+        <div className="absolute top-4 right-4 z-[201] animate-slide-in">
+          <div className={`backdrop-blur-xl rounded-2xl border shadow-2xl overflow-hidden ${
+            conversacionBloqueada 
+              ? 'bg-amber-950/80 border-amber-500/40' 
+              : conversacionProximaBloqueada 
+                ? 'bg-red-950/80 border-red-500/40' 
+                : 'bg-slate-950/80 border-slate-600/40'
+          }`}>
+            {/* Header */}
+            <div className="flex items-center gap-2 px-3.5 py-2">
+              <span className="text-sm">
+                {conversacionProximaBloqueada ? '🔒' : conversacionBloqueada ? '🔐' : '👥'}
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-white text-xs font-bold truncate">
+                  {conversacionProximaBloqueada 
+                    ? 'Conversación bloqueada' 
+                    : `${usersInCall.map(u => u.name).join(', ')}`}
+                </p>
+                <p className="text-white/50 text-[9px]">
+                  {conversacionProximaBloqueada
+                    ? `${conversacionProximaBloqueada.nombre} está en conversación privada`
+                    : conversacionBloqueada
+                      ? 'Conversación privada — nadie más puede escuchar'
+                      : !currentUser.isMicOn && !currentUser.isCameraOn
+                        ? 'Activa mic o cámara para hablar'
+                        : 'Conversación abierta'}
+                </p>
+              </div>
+            </div>
+            {/* Acciones (solo si no estoy bloqueado por conversación ajena) */}
+            {!conversacionProximaBloqueada && (
+              <div className="flex items-center gap-1.5 px-3 pb-2.5">
+                {/* Botón mic rápido */}
+                <button
+                  onClick={toggleMic}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                    currentUser.isMicOn 
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                      : 'bg-white/10 text-white/70 hover:bg-white/20 border border-white/10'
+                  }`}
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    {currentUser.isMicOn 
+                      ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                      : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                    }
+                  </svg>
+                  {currentUser.isMicOn ? 'Mic ON' : 'Mic'}
+                </button>
+                {/* Botón cámara rápido */}
+                <button
+                  onClick={toggleCamera}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                    currentUser.isCameraOn 
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                      : 'bg-white/10 text-white/70 hover:bg-white/20 border border-white/10'
+                  }`}
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  {currentUser.isCameraOn ? 'Cam ON' : 'Cam'}
+                </button>
+                {/* Botón lock conversation */}
+                <button
+                  onClick={bloquearConversacion}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                    conversacionBloqueada
+                      ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                      : 'bg-white/10 text-white/70 hover:bg-white/20 border border-white/10'
+                  }`}
+                  title={conversacionBloqueada ? 'Desbloquear conversación' : 'Bloquear conversación (privada)'}
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    {conversacionBloqueada 
+                      ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                      : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                    }
+                  </svg>
+                  {conversacionBloqueada ? 'Privada' : 'Bloquear'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Barra de Controles Inferior (Estilo 2026) — oculta en showroom */}
+      {!showroomMode && <BottomControlBar
         onToggleMic={toggleMic}
         onToggleCam={toggleCamera}
         onToggleShare={handleToggleScreenShare}
@@ -4944,7 +5193,7 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
         }}
         isGameActive={isPlayingGame}
         isGameHubOpen={isGameHubOpen}
-      />
+      />}
 
       {/* Input de Chat Flotante - Minimalista */}
       {showChat && (
@@ -5142,6 +5391,8 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
               broadcastMovement(px, py, currentUserEcs.direction || 'front', false, emoteId, true);
             }
           }
+          // XP por emote enviado (throttle 10s)
+          grantXP('emote_enviado', 10000);
           hapticFeedback('medium');
         }}
       />

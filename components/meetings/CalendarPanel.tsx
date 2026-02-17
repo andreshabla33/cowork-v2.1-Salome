@@ -77,6 +77,8 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ onJoinMeeting }) =
     puesto_aplicado: ''
   });
   const [erroresInvitado, setErroresInvitado] = useState<string[]>([]);
+  const [showroomHabilitado, setShowroomHabilitado] = useState(false);
+  const [showroomDuracion, setShowroomDuracion] = useState(5);
 
   // Obtener cargo del usuario actual (desde miembros_espacio o default)
   const [cargoUsuario, setCargoUsuario] = useState<CargoLaboral>('colaborador');
@@ -425,6 +427,8 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ onJoinMeeting }) =
                   tipo_invitado: inv.empresa ? 'cliente' : 'invitado',
                   creado_por: currentUser.id,
                   expira_en: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+                  showroom_habilitado: showroomHabilitado && newMeeting.tipo_reunion === 'cliente',
+                  showroom_duracion_min: showroomHabilitado ? showroomDuracion : 5,
                 })
                 .select()
                 .single();
@@ -1180,7 +1184,7 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ onJoinMeeting }) =
 
               {/* Formulario de Invitado Externo (solo para cliente/candidato) */}
               {configTipoActual.requiereInvitadoExterno && (
-                <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+                <div className="bg-white/5 rounded-xl p-3 border border-white/10 space-y-3">
                   <label className="block text-[9px] font-bold uppercase tracking-wider opacity-60 mb-2">
                     {newMeeting.tipo_reunion === 'cliente' ? '🤝 Invitar Cliente' : '🎯 Invitar Candidato'}
                   </label>
@@ -1273,6 +1277,44 @@ export const CalendarPanel: React.FC<CalendarPanelProps> = ({ onJoinMeeting }) =
                       + Agregar {newMeeting.tipo_reunion === 'cliente' ? 'Cliente' : 'Candidato'}
                     </button>
                   </div>
+
+                  {/* Toggle Showroom — solo para deals tipo cliente */}
+                  {newMeeting.tipo_reunion === 'cliente' && (
+                    <div className="mt-3 p-3 rounded-lg bg-gradient-to-r from-purple-500/10 to-indigo-500/10 border border-purple-500/20">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">🏢</span>
+                          <div>
+                            <p className="text-xs font-bold text-white">Explorar espacio virtual</p>
+                            <p className="text-[10px] opacity-50">El invitado podrá recorrer el espacio en modo demo</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowroomHabilitado(!showroomHabilitado)}
+                          className={`relative w-10 h-5 rounded-full transition-all ${showroomHabilitado ? 'bg-purple-500' : 'bg-white/20'}`}
+                        >
+                          <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${showroomHabilitado ? 'left-5' : 'left-0.5'}`} />
+                        </button>
+                      </div>
+                      {showroomHabilitado && (
+                        <div className="flex items-center gap-2 mt-2">
+                          <span className="text-[10px] opacity-60">Duración:</span>
+                          <select
+                            value={showroomDuracion}
+                            onChange={e => setShowroomDuracion(parseInt(e.target.value))}
+                            className="bg-white/10 border border-white/10 rounded-lg px-2 py-1 text-[10px] focus:outline-none"
+                            style={{ colorScheme: 'dark' }}
+                          >
+                            <option value={3} className="bg-zinc-800">3 min</option>
+                            <option value={5} className="bg-zinc-800">5 min</option>
+                            <option value={10} className="bg-zinc-800">10 min</option>
+                            <option value={15} className="bg-zinc-800">15 min</option>
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
