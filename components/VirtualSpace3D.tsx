@@ -3400,6 +3400,12 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
     return next;
   }, [remoteScreenStreams, allowedVideoIds]);
 
+  // === ESTADOS DE PRIVACIDAD DE PROXIMIDAD (patrón Gather) ===
+  const [conversacionBloqueada, setConversacionBloqueada] = useState(false);
+  const [conversacionesBloqueadasRemoto, setConversacionesBloqueadasRemoto] = useState<Map<string, string[]>>(new Map());
+  const [proximidadNotificada, setProximidadNotificada] = useState(false);
+  const proximidadNotificadaRef = useRef(false);
+
   // === SUSCRIPCIÓN SELECTIVA POR PROXIMIDAD + AUDIO ESPACIAL (patrón Gather/LiveKit HQ) ===
   // Nivel 1: Proximidad (usersInCall) → subscribe ALL tracks (audio + video)
   // Nivel 2: Audio range (usersInAudioRange) → subscribe AUDIO-ONLY tracks (audio espacial por el pasillo)
@@ -3773,12 +3779,6 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
       room.off(RoomEvent.DataReceived, manejarData);
     };
   }, [USAR_LIVEKIT, livekitConnected, manejarEventoInstantaneo]);
-
-  // === ESTADOS DE PRIVACIDAD DE PROXIMIDAD (patrón Gather) ===
-  const [conversacionBloqueada, setConversacionBloqueada] = useState(false);
-  const [conversacionesBloqueadasRemoto, setConversacionesBloqueadasRemoto] = useState<Map<string, string[]>>(new Map());
-  const [proximidadNotificada, setProximidadNotificada] = useState(false);
-  const proximidadNotificadaRef = useRef(false);
 
   // Función para bloquear/desbloquear conversación de proximidad (patrón Gather: locked conversation)
   const bloquearConversacion = useCallback(() => {
