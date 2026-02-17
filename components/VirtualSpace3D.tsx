@@ -3726,13 +3726,17 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
 
     if (mensaje.type === 'lock_conversation') {
       if (mensaje.payload.by === session.user.id) return;
+      const soyParticipante = mensaje.payload.participants?.includes(session.user.id);
       if (mensaje.payload.locked) {
+        // Si soy participante de la conversación, espejar el lock en mi UI
+        if (soyParticipante) setConversacionBloqueada(true);
         setConversacionesBloqueadasRemoto(prev => {
           const next = new Map(prev);
           next.set(mensaje.payload.by, mensaje.payload.participants || []);
           return next;
         });
       } else {
+        if (soyParticipante) setConversacionBloqueada(false);
         setConversacionesBloqueadasRemoto(prev => {
           const next = new Map(prev);
           next.delete(mensaje.payload.by);
@@ -4441,22 +4445,32 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
             }
             console.log('🎤 Audio constraints:', audioConstraints);
             
-            console.log('Requesting camera/mic access...');
-            const newStream = await navigator.mediaDevices.getUserMedia({ 
-              video: videoConstraints, 
-              audio: audioConstraints 
-            }).catch(async (err) => {
+            // Pedir solo los dispositivos que el usuario tiene activos (evita "Device in use" innecesario)
+            const wantVideo = currentUser.isCameraOn || currentUser.isScreenSharing;
+            const wantAudio = currentUser.isMicOn;
+            const mediaConstraints: MediaStreamConstraints = {};
+            if (wantVideo) mediaConstraints.video = videoConstraints;
+            if (wantAudio) mediaConstraints.audio = audioConstraints;
+            if (!wantVideo && !wantAudio) mediaConstraints.audio = audioConstraints; // fallback: al menos audio
+            
+            console.log('Requesting media access...', { wantVideo, wantAudio });
+            const newStream = await navigator.mediaDevices.getUserMedia(mediaConstraints).catch(async (err) => {
               // Si falla con dispositivos específicos, intentar con defaults
               if (cameraSettings.selectedCameraId || currentAudioSettings.selectedMicrophoneId) {
                 console.warn('Selected device not available, using default:', err.message);
-                return navigator.mediaDevices.getUserMedia({ 
-                  video: { width: 640, height: 480 }, 
-                  audio: {
-                    noiseSuppression: currentAudioSettings.noiseReduction,
-                    echoCancellation: currentAudioSettings.echoCancellation,
-                    autoGainControl: currentAudioSettings.autoGainControl,
-                  }
-                });
+                const fallbackConstraints: MediaStreamConstraints = {};
+                if (wantVideo) fallbackConstraints.video = { width: 640, height: 480 };
+                if (wantAudio || !wantVideo) fallbackConstraints.audio = {
+                  noiseSuppression: currentAudioSettings.noiseReduction,
+                  echoCancellation: currentAudioSettings.echoCancellation,
+                  autoGainControl: currentAudioSettings.autoGainControl,
+                };
+                return navigator.mediaDevices.getUserMedia(fallbackConstraints);
+              }
+              // Si video falla con Device in use, intentar solo audio
+              if (wantVideo && err.name === 'NotReadableError') {
+                console.warn('Camera in use, falling back to audio-only:', err.message);
+                return navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
               }
               throw err;
             });
