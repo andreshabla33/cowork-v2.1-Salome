@@ -3577,47 +3577,59 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
   const hasAnyoneNearby = hasActiveCall || usersInAudioRange.length > 0;
   const prevHasAnyoneNearbyRef = useRef(false);
   const prevHasActiveCallRef = useRef(false);
+  const publishDelayTimerRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
     if (!USAR_LIVEKIT || !livekitConnected) return;
     const room = livekitRoomRef.current;
     if (!room) return;
 
-    if (!hasAnyoneNearby && prevHasAnyoneNearbyRef.current) {
+    // Capturar valores previos ANTES de actualizar refs (evita early-return bug)
+    const prevHasAnyoneNearby = prevHasAnyoneNearbyRef.current;
+    const prevHasActiveCall = prevHasActiveCallRef.current;
+    prevHasAnyoneNearbyRef.current = hasAnyoneNearby;
+    prevHasActiveCallRef.current = hasActiveCall;
+
+    if (!hasAnyoneNearby && prevHasAnyoneNearby) {
       // Salieron todos de proximidad Y rango de audio → despublicar todo
+      if (publishDelayTimerRef.current) { clearTimeout(publishDelayTimerRef.current); publishDelayTimerRef.current = null; }
       ['audio', 'video', 'screen'].forEach(tipo => {
         despublicarTrackLocal(tipo as 'audio' | 'video' | 'screen').catch(() => {});
       });
       console.log('[LIVEKIT] Sin usuarios cercanos — tracks locales despublicados');
-    } else if (!hasActiveCall && prevHasActiveCallRef.current && usersInAudioRange.length > 0) {
+    } else if (!hasActiveCall && prevHasActiveCall && usersInAudioRange.length > 0) {
       // Salieron de proximidad pero quedan en rango audio → despublicar video, mantener audio
+      if (publishDelayTimerRef.current) { clearTimeout(publishDelayTimerRef.current); publishDelayTimerRef.current = null; }
       ['video', 'screen'].forEach(tipo => {
         despublicarTrackLocal(tipo as 'audio' | 'video' | 'screen').catch(() => {});
       });
       console.log('[LIVEKIT] Sin proximidad pero con rango audio — video despublicado, audio mantenido');
-    } else if (hasActiveCall && !prevHasActiveCallRef.current) {
-      // Alguien entró en proximidad → publicar tracks locales con delay para estabilidad
-      const delay = setTimeout(() => {
+    } else if (hasActiveCall && !prevHasActiveCall) {
+      // Alguien entró en proximidad → publicar tracks locales con delay corto para estabilidad
+      if (publishDelayTimerRef.current) clearTimeout(publishDelayTimerRef.current);
+      publishDelayTimerRef.current = setTimeout(() => {
+        publishDelayTimerRef.current = null;
         if (livekitRoomRef.current?.state === 'connected') {
           sincronizarTracksLocales().catch(() => {});
           console.log('[LIVEKIT] Usuario en proximidad — sincronizando tracks locales (post-delay)');
         } else {
           console.log('[LIVEKIT] Room no está connected, esperando...');
         }
-      }, 1500);
-      return () => clearTimeout(delay);
-    } else if (hasAnyoneNearby && !prevHasAnyoneNearbyRef.current && !hasActiveCall) {
+      }, 500);
+    } else if (hasAnyoneNearby && !prevHasAnyoneNearby && !hasActiveCall) {
       // Alguien entró en rango espacial → publicar audio + video (cam bubble + audio espacial)
-      const delay = setTimeout(async () => {
+      if (publishDelayTimerRef.current) clearTimeout(publishDelayTimerRef.current);
+      publishDelayTimerRef.current = setTimeout(() => {
+        publishDelayTimerRef.current = null;
         if (livekitRoomRef.current?.state === 'connected') {
           sincronizarTracksLocales().catch(() => {});
           console.log('[LIVEKIT] Usuario en rango espacial — sincronizando tracks (cam bubble + audio espacial)');
         }
-      }, 1000);
-      return () => clearTimeout(delay);
+      }, 500);
     }
 
-    prevHasAnyoneNearbyRef.current = hasAnyoneNearby;
-    prevHasActiveCallRef.current = hasActiveCall;
+    return () => {
+      if (publishDelayTimerRef.current) { clearTimeout(publishDelayTimerRef.current); publishDelayTimerRef.current = null; }
+    };
   }, [USAR_LIVEKIT, livekitConnected, hasActiveCall, hasAnyoneNearby, usersInAudioRange.length, despublicarTrackLocal, sincronizarTracksLocales, stream, publicarTrackLocal]);
 
   // Re-publicar video cuando effectiveStream cambia (blur, fondo, etc.)
