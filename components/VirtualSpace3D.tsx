@@ -135,6 +135,47 @@ const playTeleportSound = () => {
   } catch (e) { /* Audio no disponible */ }
 };
 
+// Sonido de nudge (estilo Gather - notificación corta y amigable)
+const playNudgeSound = () => {
+  try {
+    const ctx = new AudioContext();
+    const now = ctx.currentTime;
+    // Tono doble "ding-ding" amigable
+    [0, 0.15].forEach((offset) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(offset === 0 ? 880 : 1100, now + offset);
+      gain.gain.setValueAtTime(0.25, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + offset + 0.2);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now + offset);
+      osc.stop(now + offset + 0.2);
+    });
+    setTimeout(() => ctx.close(), 500);
+  } catch (e) { /* Audio no disponible */ }
+};
+
+// Sonido de invitación recibida (estilo Gather - melodía ascendente)
+const playInviteSound = () => {
+  try {
+    const ctx = new AudioContext();
+    const now = ctx.currentTime;
+    [523, 659, 784].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + i * 0.12);
+      gain.gain.setValueAtTime(0.2, now + i * 0.12);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + i * 0.12 + 0.25);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now + i * 0.12);
+      osc.stop(now + i * 0.12 + 0.25);
+    });
+    setTimeout(() => ctx.close(), 600);
+  } catch (e) { /* Audio no disponible */ }
+};
+
 // --- Iconos ---
 
 const IconPrivacy = ({ on }: { on: boolean }) => (
@@ -282,6 +323,8 @@ interface AvatarProps {
   showVideoBubble?: boolean;
   message?: string | null;
   onClickAvatar?: () => void;
+  onClickRemoteAvatar?: (userId: string) => void;
+  userId?: string;
   mirrorVideo?: boolean;
   hideSelfView?: boolean;
   showName?: boolean;
@@ -298,7 +341,7 @@ const STATUS_LABELS: Record<PresenceStatus, string> = {
   [PresenceStatus.DND]: 'No molestar',
 };
 
-const Avatar: React.FC<AvatarProps> = ({ position, config, name, status, isCurrentUser, animationState = 'idle', direction, reaction, videoStream, camOn, showVideoBubble = true, message, onClickAvatar, mirrorVideo: mirrorVideoProp, hideSelfView: hideSelfViewProp, showName: showNameProp, lodLevel: lodLevelProp, esFantasma = false, remoteAvatar3DConfig }) => {
+const Avatar: React.FC<AvatarProps> = ({ position, config, name, status, isCurrentUser, animationState = 'idle', direction, reaction, videoStream, camOn, showVideoBubble = true, message, onClickAvatar, onClickRemoteAvatar, userId, mirrorVideo: mirrorVideoProp, hideSelfView: hideSelfViewProp, showName: showNameProp, lodLevel: lodLevelProp, esFantasma = false, remoteAvatar3DConfig }) => {
   const [showStatusLabel, setShowStatusLabel] = useState(false);
   const { avatar3DConfig } = useStore();
   
@@ -337,7 +380,11 @@ const Avatar: React.FC<AvatarProps> = ({ position, config, name, status, isCurre
   }, [showStatusLabel]);
   
   return (
-    <group position={position} onClick={(e) => { if (isCurrentUser && onClickAvatar) { e.stopPropagation(); onClickAvatar(); } }}>
+    <group position={position} onClick={(e) => {
+      e.stopPropagation();
+      if (isCurrentUser && onClickAvatar) { onClickAvatar(); }
+      else if (!isCurrentUser && onClickRemoteAvatar && userId) { onClickRemoteAvatar(userId); }
+    }}>
       {/* Avatar 3D GLTF — misma empresa siempre GLTF (estilo Gather) */}
       {renderGLTF && (
         <GLTFAvatar
@@ -451,7 +498,8 @@ const RemoteAvatarInterpolated: React.FC<{
   ecsStateRef?: React.MutableRefObject<EstadoEcsEspacio>;
   lodLevel?: AvatarLodLevel;
   frustumRef?: React.MutableRefObject<THREE.Frustum>;
-}> = ({ user, remoteStream, showVideoBubble, message, reaction, realtimePositionsRef, interpolacionWorkerRef, posicionesInterpoladasRef, ecsStateRef, lodLevel, frustumRef }) => {
+  onClickRemoteAvatar?: (userId: string) => void;
+}> = ({ user, remoteStream, showVideoBubble, message, reaction, realtimePositionsRef, interpolacionWorkerRef, posicionesInterpoladasRef, ecsStateRef, lodLevel, frustumRef, onClickRemoteAvatar }) => {
   const groupRef = useRef<THREE.Group>(null);
   const initialPos = useMemo(() => {
     const ecsData = ecsStateRef?.current ? obtenerEstadoUsuarioEcs(ecsStateRef.current, user.id) : null;
@@ -684,6 +732,8 @@ const RemoteAvatarInterpolated: React.FC<{
               lodLevel={isVisible ? lodLevel : 'low'}
               esFantasma={!!user.esFantasma}
               remoteAvatar3DConfig={user.avatar3DConfig}
+              onClickRemoteAvatar={onClickRemoteAvatar}
+              userId={user.id}
             />
           )
         )}
@@ -712,9 +762,10 @@ interface RemoteUsersProps {
   posicionesInterpoladasRef?: React.MutableRefObject<Map<string, { x: number; z: number; direction?: DireccionAvatar; isMoving?: boolean }>>;
   ecsStateRef?: React.MutableRefObject<EstadoEcsEspacio>;
   frustumRef?: React.MutableRefObject<THREE.Frustum>;
+  onClickRemoteAvatar?: (userId: string) => void;
 }
 
-const RemoteUsers: React.FC<RemoteUsersProps> = ({ users, remoteStreams, showVideoBubble, usersInCallIds, usersInAudioRangeIds, remoteMessages, remoteReaction, realtimePositionsRef, interpolacionWorkerRef, posicionesInterpoladasRef, ecsStateRef, frustumRef }) => {
+const RemoteUsers: React.FC<RemoteUsersProps> = ({ users, remoteStreams, showVideoBubble, usersInCallIds, usersInAudioRangeIds, remoteMessages, remoteReaction, realtimePositionsRef, interpolacionWorkerRef, posicionesInterpoladasRef, ecsStateRef, frustumRef, onClickRemoteAvatar }) => {
   const { currentUser } = useStore();
 
   const obtenerPosicionEcs = useCallback((usuario: User) => {
@@ -752,6 +803,7 @@ const RemoteUsers: React.FC<RemoteUsersProps> = ({ users, remoteStreams, showVid
           ecsStateRef={ecsStateRef}
           lodLevel={calcularLod(u)}
           frustumRef={frustumRef}
+          onClickRemoteAvatar={onClickRemoteAvatar}
         />
       ))}
     </>
@@ -1433,9 +1485,10 @@ interface SceneProps {
   mobileInputRef?: React.MutableRefObject<JoystickInput>;
   enableDayNightCycle?: boolean;
   onXPEvent?: (accion: string, cooldownMs?: number) => void;
+  onClickRemoteAvatar?: (userId: string) => void;
 }
 
-const Scene: React.FC<SceneProps> = ({ currentUser, onlineUsers, setPosition, theme, orbitControlsRef, stream, remoteStreams, showVideoBubbles = true, localMessage, remoteMessages, localReactions, remoteReaction, onClickAvatar, moveTarget, onReachTarget, onDoubleClickFloor, onTapFloor, teleportTarget, onTeleportDone, showFloorGrid = true, showNamesAboveAvatars = true, cameraSensitivity = 5, invertYAxis = false, cameraMode = 'free', realtimePositionsRef, interpolacionWorkerRef, posicionesInterpoladasRef, ecsStateRef, broadcastMovement, moveSpeed, runSpeed, zonasEmpresa = [], onZoneCollision, usersInCallIds, usersInAudioRangeIds, empresasAutorizadas = [], mobileInputRef, enableDayNightCycle = false, onXPEvent }) => {
+const Scene: React.FC<SceneProps> = ({ currentUser, onlineUsers, setPosition, theme, orbitControlsRef, stream, remoteStreams, showVideoBubbles = true, localMessage, remoteMessages, localReactions, remoteReaction, onClickAvatar, moveTarget, onReachTarget, onDoubleClickFloor, onTapFloor, teleportTarget, onTeleportDone, showFloorGrid = true, showNamesAboveAvatars = true, cameraSensitivity = 5, invertYAxis = false, cameraMode = 'free', realtimePositionsRef, interpolacionWorkerRef, posicionesInterpoladasRef, ecsStateRef, broadcastMovement, moveSpeed, runSpeed, zonasEmpresa = [], onZoneCollision, usersInCallIds, usersInAudioRangeIds, empresasAutorizadas = [], mobileInputRef, enableDayNightCycle = false, onXPEvent, onClickRemoteAvatar }) => {
   const gridColor = theme === 'arcade' ? '#00ff41' : '#6366f1';
   const { camera } = useThree();
   const frustumRef = useRef(new THREE.Frustum());
@@ -1696,7 +1749,7 @@ const Scene: React.FC<SceneProps> = ({ currentUser, onlineUsers, setPosition, th
       <CameraFollow orbitControlsRef={orbitControlsRef} />
       
       {/* Usuarios remotos */}
-      <RemoteUsers users={onlineUsers} remoteStreams={remoteStreams} showVideoBubble={showVideoBubbles} usersInCallIds={usersInCallIds} usersInAudioRangeIds={usersInAudioRangeIds} remoteMessages={remoteMessages} remoteReaction={remoteReaction} realtimePositionsRef={realtimePositionsRef} interpolacionWorkerRef={interpolacionWorkerRef} posicionesInterpoladasRef={posicionesInterpoladasRef} ecsStateRef={ecsStateRef} frustumRef={frustumRef} />
+      <RemoteUsers users={onlineUsers} remoteStreams={remoteStreams} showVideoBubble={showVideoBubbles} usersInCallIds={usersInCallIds} usersInAudioRangeIds={usersInAudioRangeIds} remoteMessages={remoteMessages} remoteReaction={remoteReaction} realtimePositionsRef={realtimePositionsRef} interpolacionWorkerRef={interpolacionWorkerRef} posicionesInterpoladasRef={posicionesInterpoladasRef} ecsStateRef={ecsStateRef} frustumRef={frustumRef} onClickRemoteAvatar={onClickRemoteAvatar} />
 
       {/* Objetos interactivos — ocultos hasta tener modelos GLB reales
       <ObjetosInteractivos
@@ -2246,6 +2299,12 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
   const [moveTarget, setMoveTarget] = useState<{ x: number; z: number } | null>(null);
   const [teleportTarget, setTeleportTarget] = useState<{ x: number; z: number } | null>(null);
   const [showAvatarModal, setShowAvatarModal] = useState(false);
+  // === INTERACCIÓN AVATAR GATHER-STYLE (Fases 1-5) ===
+  const [selectedRemoteUser, setSelectedRemoteUser] = useState<User | null>(null);
+  const [followTargetId, setFollowTargetId] = useState<string | null>(null);
+  const followTargetIdRef = useRef<string | null>(null);
+  const [incomingNudge, setIncomingNudge] = useState<{ from: string; fromName: string } | null>(null);
+  const [incomingInvite, setIncomingInvite] = useState<{ from: string; fromName: string; x: number; y: number } | null>(null);
   // === MOBILE GAME CONTROLS ===
   const mobileInputRef = useRef<JoystickInput>({ dx: 0, dz: 0, magnitude: 0, isRunning: false, active: false });
   const [showEmoteWheel, setShowEmoteWheel] = useState(false);
@@ -3811,6 +3870,30 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
       return;
     }
 
+    if (mensaje.type === 'nudge') {
+      if (mensaje.payload.from === session.user.id) return;
+      if (mensaje.payload.to && mensaje.payload.to !== session.user.id) return;
+      playNudgeSound();
+      setIncomingNudge({ from: mensaje.payload.from, fromName: mensaje.payload.fromName });
+      setTimeout(() => setIncomingNudge(null), 4000);
+      sendDesktopNotification(`👋 ${mensaje.payload.fromName}`, 'quiere tu atención');
+      return;
+    }
+
+    if (mensaje.type === 'invite') {
+      if (mensaje.payload.from === session.user.id) return;
+      if (mensaje.payload.to && mensaje.payload.to !== session.user.id) return;
+      playInviteSound();
+      setIncomingInvite({
+        from: mensaje.payload.from,
+        fromName: mensaje.payload.fromName,
+        x: mensaje.payload.x,
+        y: mensaje.payload.y,
+      });
+      sendDesktopNotification(`📍 ${mensaje.payload.fromName}`, 'te invita a unirte');
+      return;
+    }
+
     if (mensaje.type === 'lock_conversation') {
       if (mensaje.payload.by === session.user.id) return;
       const soyParticipante = mensaje.payload.participants?.includes(session.user.id);
@@ -3921,6 +4004,128 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
       });
     }
   }, [enviarDataLivekit, session?.user?.id, currentUser.name]);
+
+  // === INTERACCIONES GATHER-STYLE (Fases 1-5) ===
+
+  // Fase 1: Clic en avatar remoto → abrir Profile Popup
+  const handleClickRemoteAvatar = useCallback((userId: string) => {
+    const user = usuariosEnChunks.find(u => u.id === userId);
+    if (user) setSelectedRemoteUser(user);
+  }, [usuariosEnChunks]);
+
+  // Fase 2: Go to — Teleport al usuario seleccionado
+  const handleGoToUser = useCallback((userId: string) => {
+    const ecsData = obtenerEstadoUsuarioEcs(ecsStateRef.current, userId);
+    let targetX: number, targetZ: number;
+    if (ecsData && Date.now() - (ecsData.timestamp ?? 0) <= 3000) {
+      targetX = ecsData.x;
+      targetZ = ecsData.z;
+    } else {
+      const user = usuariosEnChunks.find(u => u.id === userId);
+      if (!user) return;
+      targetX = user.x / 16;
+      targetZ = user.y / 16;
+    }
+    // Teleport a 2 unidades al lado del usuario (no encima)
+    setTeleportTarget({ x: targetX + 1.5, z: targetZ + 1.5 });
+    setSelectedRemoteUser(null);
+    grantXP('teleport', 5000);
+  }, [usuariosEnChunks, grantXP]);
+
+  // Fase 3: Nudge — Enviar notificación sonora al usuario
+  const handleNudgeUser = useCallback((userId: string) => {
+    const payload = { to: userId, from: session?.user?.id, fromName: currentUser.name };
+    if (!enviarDataLivekit({ type: 'nudge', payload })) {
+      if (webrtcChannelRef.current && session?.user?.id) {
+        webrtcChannelRef.current.send({ type: 'broadcast', event: 'nudge', payload });
+      }
+    }
+    setSelectedRemoteUser(null);
+  }, [enviarDataLivekit, session?.user?.id, currentUser.name]);
+
+  // Fase 4: Invite to join me — Enviar invitación para que el otro se teleporte a mi posición
+  const handleInviteUser = useCallback((userId: string) => {
+    const payload = {
+      to: userId,
+      from: session?.user?.id,
+      fromName: currentUser.name,
+      x: currentUserEcs.x,
+      y: currentUserEcs.y,
+    };
+    if (!enviarDataLivekit({ type: 'invite', payload })) {
+      if (webrtcChannelRef.current && session?.user?.id) {
+        webrtcChannelRef.current.send({ type: 'broadcast', event: 'invite', payload });
+      }
+    }
+    setSelectedRemoteUser(null);
+  }, [enviarDataLivekit, session?.user?.id, currentUser.name, currentUserEcs.x, currentUserEcs.y]);
+
+  // Fase 4b: Aceptar invitación recibida
+  const handleAcceptInvite = useCallback(() => {
+    if (!incomingInvite) return;
+    setTeleportTarget({ x: incomingInvite.x / 16 + 1.5, z: incomingInvite.y / 16 + 1.5 });
+    setIncomingInvite(null);
+    grantXP('teleport', 5000);
+  }, [incomingInvite, grantXP]);
+
+  // Fase 5: Follow mode — Seguir automáticamente al usuario
+  const handleFollowUser = useCallback((userId: string) => {
+    if (followTargetId === userId) {
+      // Ya lo estoy siguiendo → dejar de seguir
+      setFollowTargetId(null);
+      followTargetIdRef.current = null;
+    } else {
+      setFollowTargetId(userId);
+      followTargetIdRef.current = userId;
+    }
+    setSelectedRemoteUser(null);
+  }, [followTargetId]);
+
+  // Fase 5: Follow mode — useEffect que mueve al jugador hacia el target
+  useEffect(() => {
+    if (!followTargetId) return;
+    const interval = setInterval(() => {
+      const targetId = followTargetIdRef.current;
+      if (!targetId) return;
+      const ecsData = obtenerEstadoUsuarioEcs(ecsStateRef.current, targetId);
+      if (!ecsData || Date.now() - (ecsData.timestamp ?? 0) > 5000) {
+        // Target desconectado o sin datos frescos → dejar de seguir
+        setFollowTargetId(null);
+        followTargetIdRef.current = null;
+        return;
+      }
+      const myX = (currentUserEcs.x || 400) / 16;
+      const myZ = (currentUserEcs.y || 400) / 16;
+      const dx = ecsData.x - myX;
+      const dz = ecsData.z - myZ;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      // Solo mover si estamos a más de 3 unidades de distancia (no pegarse encima)
+      if (dist > 3) {
+        // Mover hacia el target pero quedarse a 2 unidades de distancia
+        const ratio = (dist - 2) / dist;
+        setMoveTarget({ x: myX + dx * ratio, z: myZ + dz * ratio });
+      }
+    }, 800);
+    return () => clearInterval(interval);
+  }, [followTargetId, currentUserEcs.x, currentUserEcs.y]);
+
+  // Sync followTargetIdRef
+  useEffect(() => {
+    followTargetIdRef.current = followTargetId;
+  }, [followTargetId]);
+
+  // Cancelar follow si el usuario se mueve manualmente (teclas WASD)
+  useEffect(() => {
+    if (!followTargetId) return;
+    const cancelFollow = (e: KeyboardEvent) => {
+      if (['w', 'a', 's', 'd', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        setFollowTargetId(null);
+        followTargetIdRef.current = null;
+      }
+    };
+    window.addEventListener('keydown', cancelFollow);
+    return () => window.removeEventListener('keydown', cancelFollow);
+  }, [followTargetId]);
 
   // Función para broadcast de movimiento (alta frecuencia)
   const webrtcChannelSubscribedRef = useRef(false);
@@ -5027,6 +5232,7 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
             mobileInputRef={mobileInputRef}
             enableDayNightCycle={enableDayNightCycle}
             onXPEvent={grantXP}
+            onClickRemoteAvatar={handleClickRemoteAvatar}
             onTapFloor={isMobile ? (point) => {
               // Mobile: single tap = walk/teleport (misma lógica que double-click en desktop)
               const playerX = (currentUserEcs.x || 400) / 16;
@@ -5365,6 +5571,166 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
               className="ml-2 w-6 h-6 rounded-full bg-black/20 flex items-center justify-center hover:bg-black/30"
             >
               ✕
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Profile Popup — Estilo Gather (clic en avatar remoto) */}
+      {selectedRemoteUser && (
+        <div className="fixed inset-0 z-[250]" onClick={() => setSelectedRemoteUser(null)}>
+          <div
+            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[280px] bg-zinc-900/95 backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl shadow-black/60 overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header con avatar y nombre */}
+            <div className="flex items-center gap-3 px-4 pt-4 pb-3">
+              <div className="relative">
+                <div className={`w-12 h-12 rounded-full border-2 flex items-center justify-center overflow-hidden ${
+                  selectedRemoteUser.status === PresenceStatus.AVAILABLE ? 'border-green-500' :
+                  selectedRemoteUser.status === PresenceStatus.BUSY ? 'border-red-500' :
+                  selectedRemoteUser.status === PresenceStatus.AWAY ? 'border-yellow-500' : 'border-purple-500'
+                }`}>
+                  {selectedRemoteUser.profilePhoto ? (
+                    <img src={selectedRemoteUser.profilePhoto} alt={selectedRemoteUser.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-lg font-black text-white">{selectedRemoteUser.name.charAt(0)}</span>
+                  )}
+                </div>
+                <span className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-zinc-900 ${
+                  selectedRemoteUser.status === PresenceStatus.AVAILABLE ? 'bg-green-500' :
+                  selectedRemoteUser.status === PresenceStatus.BUSY ? 'bg-red-500' :
+                  selectedRemoteUser.status === PresenceStatus.AWAY ? 'bg-yellow-500' : 'bg-purple-500'
+                }`} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-white truncate">{selectedRemoteUser.name}</p>
+                <p className="text-[10px] text-white/50">{STATUS_LABELS[selectedRemoteUser.status]}</p>
+              </div>
+              <button
+                onClick={() => setSelectedRemoteUser(null)}
+                className="w-6 h-6 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/40 hover:text-white transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Acciones principales — estilo Gather */}
+            <div className="flex items-center gap-1.5 px-4 pb-3">
+              {/* Wave */}
+              <button
+                onClick={() => { handleWaveUser(selectedRemoteUser.id); setSelectedRemoteUser(null); }}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/20 text-amber-400 text-xs font-semibold transition-all"
+                title="Saludar"
+              >
+                👋
+              </button>
+              {/* Go to */}
+              <button
+                onClick={() => handleGoToUser(selectedRemoteUser.id)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/20 text-indigo-400 text-xs font-semibold transition-all"
+                title="Ir hacia este usuario"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                Go to
+              </button>
+              {/* Nudge */}
+              <button
+                onClick={() => handleNudgeUser(selectedRemoteUser.id)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-pink-500/15 hover:bg-pink-500/25 border border-pink-500/20 text-pink-400 text-xs font-semibold transition-all"
+                title="Llamar la atención"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
+                Ring
+              </button>
+              {/* Menú extra */}
+              <div className="relative group">
+                <button
+                  className="flex items-center justify-center w-8 h-8 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/50 hover:text-white transition-all"
+                  title="Más opciones"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" /></svg>
+                </button>
+                {/* Dropdown */}
+                <div className="absolute bottom-full right-0 mb-1 w-44 bg-zinc-800/95 backdrop-blur-xl rounded-xl border border-white/10 shadow-2xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-150 py-1">
+                  <button
+                    onClick={() => handleInviteUser(selectedRemoteUser.id)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-white/80 hover:bg-white/10 hover:text-white transition-colors"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
+                    Invitar a unirse
+                  </button>
+                  <button
+                    onClick={() => handleFollowUser(selectedRemoteUser.id)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-white/80 hover:bg-white/10 hover:text-white transition-colors"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                    {followTargetId === selectedRemoteUser.id ? 'Dejar de seguir' : 'Seguir'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notificación de Nudge entrante */}
+      {incomingNudge && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[201] animate-slide-in">
+          <div className="bg-pink-500/90 backdrop-blur-xl text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-pulse border border-pink-400/30">
+            <span className="text-2xl">🔔</span>
+            <div>
+              <p className="font-bold text-sm">{incomingNudge.fromName}</p>
+              <p className="text-xs opacity-90">quiere tu atención</p>
+            </div>
+            <button
+              onClick={() => setIncomingNudge(null)}
+              className="ml-2 w-6 h-6 rounded-full bg-black/20 flex items-center justify-center hover:bg-black/30"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Notificación de Invite entrante */}
+      {incomingInvite && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[201] animate-slide-in">
+          <div className="bg-indigo-600/90 backdrop-blur-xl text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-indigo-400/30">
+            <span className="text-2xl">📍</span>
+            <div>
+              <p className="font-bold text-sm">{incomingInvite.fromName}</p>
+              <p className="text-xs opacity-90">te invita a unirte</p>
+            </div>
+            <div className="flex gap-1.5 ml-2">
+              <button
+                onClick={handleAcceptInvite}
+                className="px-3 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-xs font-bold transition-colors"
+              >
+                Ir
+              </button>
+              <button
+                onClick={() => setIncomingInvite(null)}
+                className="px-3 py-1.5 rounded-lg bg-black/20 hover:bg-black/30 text-xs font-bold transition-colors"
+              >
+                No
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Banner de Follow Mode activo */}
+      {followTargetId && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[201]">
+          <div className="bg-violet-600/80 backdrop-blur-xl text-white px-4 py-2 rounded-xl shadow-lg flex items-center gap-2 border border-violet-400/30">
+            <svg className="w-4 h-4 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+            <span className="text-xs font-bold">Siguiendo a {usuariosEnChunks.find(u => u.id === followTargetId)?.name || 'usuario'}</span>
+            <button
+              onClick={() => { setFollowTargetId(null); followTargetIdRef.current = null; }}
+              className="ml-1 px-2 py-0.5 rounded-lg bg-white/20 hover:bg-white/30 text-[10px] font-bold transition-colors"
+            >
+              Dejar de seguir
             </button>
           </div>
         </div>
