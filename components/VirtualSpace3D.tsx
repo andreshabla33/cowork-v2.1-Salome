@@ -456,6 +456,13 @@ const Avatar: React.FC<AvatarProps> = ({ position, config, name, status, isCurre
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
     >
+      {/* Hitbox invisible para capturar raycast (r3f no propaga eventos click a group sin mesh) */}
+      {!isCurrentUser && (
+        <mesh visible={false}>
+          <cylinderGeometry args={[0.8, 0.8, 3, 8]} />
+          <meshBasicMaterial transparent opacity={0} />
+        </mesh>
+      )}
       {/* Avatar 3D GLTF — misma empresa siempre GLTF (estilo Gather) */}
       {renderGLTF && (
         <GLTFAvatar
