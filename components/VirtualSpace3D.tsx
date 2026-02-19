@@ -2468,8 +2468,7 @@ const ICE_SERVERS = [
   },
 ];
 
-// ============== COMPACT ACTION BAR — screen-space (estilo Pinterest/Gather, NN/g best practices) ==============
-const SIDEBAR_WIDTH = 280; // Ancho aprox del panel izquierdo
+// ============== PROFILE CARD — posición fija top-left (estilo panel config) ==============
 const ScreenSpaceProfileCard: React.FC<{
   user: User;
   screenPosRef: React.MutableRefObject<{ x: number; y: number } | null>;
@@ -2479,20 +2478,15 @@ const ScreenSpaceProfileCard: React.FC<{
   onFollow: (id: string) => void;
   followTargetId: string | null;
 }> = ({ user, screenPosRef, onClose, onWave, onInvite, onFollow, followTargetId }) => {
-  const [pos, setPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const barRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const mountedRef = useRef(false);
   const isFollowing = followTargetId === user.id;
 
-  // Actualizar posición desde el ref del projector (60fps)
+  // Marcar como montado después del primer frame para evitar capturar el clic que abrió la card
   useEffect(() => {
-    let raf: number;
-    const update = () => {
-      if (screenPosRef.current) setPos(screenPosRef.current);
-      raf = requestAnimationFrame(update);
-    };
-    raf = requestAnimationFrame(update);
-    return () => cancelAnimationFrame(raf);
-  }, [screenPosRef]);
+    const raf = requestAnimationFrame(() => { mountedRef.current = true; });
+    return () => { cancelAnimationFrame(raf); mountedRef.current = false; };
+  }, []);
 
   // Cerrar con Escape
   useEffect(() => {
@@ -2501,66 +2495,89 @@ const ScreenSpaceProfileCard: React.FC<{
     return () => window.removeEventListener('keydown', handleKey);
   }, [onClose]);
 
-  // Cerrar al hacer clic fuera (en el canvas/espacio 3D)
+  // Cerrar al hacer clic fuera — usa capture phase para detectar clics en el canvas 3D
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (barRef.current && !barRef.current.contains(e.target as Node)) onClose();
+      if (!mountedRef.current) return;
+      if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
+        onClose();
+      }
     };
-    const timer = setTimeout(() => window.addEventListener('mousedown', handleClickOutside), 150);
-    return () => { clearTimeout(timer); window.removeEventListener('mousedown', handleClickOutside); };
+    window.addEventListener('pointerdown', handleClickOutside, true);
+    return () => window.removeEventListener('pointerdown', handleClickOutside, true);
   }, [onClose]);
 
   const dotClass = user.status === PresenceStatus.AVAILABLE ? 'bg-green-400' :
     user.status === PresenceStatus.BUSY ? 'bg-red-400' :
     user.status === PresenceStatus.AWAY ? 'bg-yellow-400' : 'bg-purple-400';
-
-  // Clamping: no superponer panel izquierdo ni salir de pantalla
-  const barWidth = 260;
-  const clampedX = Math.max(SIDEBAR_WIDTH + 12, Math.min(pos.x - barWidth / 2, window.innerWidth - barWidth - 12));
-  const clampedY = Math.max(12, Math.min(pos.y - 70, window.innerHeight - 60));
+  const statusLabel = user.status === PresenceStatus.AVAILABLE ? 'Disponible' :
+    user.status === PresenceStatus.BUSY ? 'Ocupado' :
+    user.status === PresenceStatus.AWAY ? 'Ausente' : 'No molestar';
+  const borderClass = user.status === PresenceStatus.AVAILABLE ? 'border-green-500/50' :
+    user.status === PresenceStatus.BUSY ? 'border-red-500/50' :
+    user.status === PresenceStatus.AWAY ? 'border-yellow-500/50' : 'border-purple-500/50';
 
   return (
     <div
-      ref={barRef}
-      className="fixed z-[300] pointer-events-auto"
-      style={{ left: `${clampedX}px`, top: `${clampedY}px` }}
+      ref={cardRef}
+      className="fixed z-[300] pointer-events-auto top-16 left-[300px] animate-in fade-in slide-in-from-left-2 duration-200"
     >
-      {/* Nombre + estado (label compacto) */}
-      <div className="flex items-center justify-center gap-1.5 mb-1.5">
-        <span className={`w-2 h-2 rounded-full ${dotClass}`} />
-        <span className="text-[11px] font-semibold text-white/80 truncate max-w-[180px]">{user.name}</span>
-      </div>
-      {/* Action bar horizontal */}
-      <div className="flex items-center gap-1 bg-black/70 backdrop-blur-xl rounded-full px-1.5 py-1 border border-white/10 shadow-2xl shadow-black/60">
-        <button
-          onClick={() => onWave(user.id)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/20 hover:bg-amber-500/35 text-amber-300 text-[11px] font-semibold transition-all hover:scale-105 active:scale-95"
-          title="Saludar"
-        >
-          👋 Hola
-        </button>
-        <button
-          onClick={() => onInvite(user.id)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-500/20 hover:bg-indigo-500/35 text-indigo-300 text-[11px] font-semibold transition-all hover:scale-105 active:scale-95"
-          title="Invitar a unirse"
-        >
-          📨 Invitar
-        </button>
-        <button
-          onClick={() => onFollow(user.id)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all hover:scale-105 active:scale-95 ${
-            isFollowing
-              ? 'bg-violet-500/40 text-violet-300 border border-violet-400/30'
-              : 'bg-white/10 hover:bg-white/20 text-white/70'
-          }`}
-          title={isFollowing ? 'Dejar de seguir' : 'Seguir'}
-        >
-          👁 {isFollowing ? 'Siguiendo' : 'Seguir'}
-        </button>
-      </div>
-      {/* Flecha apuntando al avatar */}
-      <div className="flex justify-center mt-0.5">
-        <div className="w-2 h-2 bg-black/70 rotate-45 border-r border-b border-white/10" />
+      <div className="bg-zinc-900/95 backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl shadow-black/50 w-[240px] overflow-hidden">
+        {/* Header con foto + nombre + estado */}
+        <div className="flex items-center gap-3 px-4 pt-3.5 pb-3">
+          <div className="relative flex-shrink-0">
+            <div className={`w-10 h-10 rounded-full border-2 ${borderClass} flex items-center justify-center overflow-hidden bg-zinc-800`}>
+              {user.profilePhoto ? (
+                <img src={user.profilePhoto} alt={user.name} className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-sm font-bold text-white/80">{user.name.charAt(0).toUpperCase()}</span>
+              )}
+            </div>
+            <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-zinc-900 ${dotClass}`} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-bold text-white truncate">{user.name}</p>
+            <p className="text-[10px] text-white/40">{statusLabel}</p>
+          </div>
+          <button
+            onClick={(e) => { e.stopPropagation(); onClose(); }}
+            className="w-6 h-6 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors group"
+          >
+            <svg className="w-3 h-3 text-white/40 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        {/* Separador */}
+        <div className="mx-4 border-t border-white/5" />
+        {/* Acciones */}
+        <div className="flex items-center gap-1.5 px-3 py-2.5">
+          <button
+            onClick={(e) => { e.stopPropagation(); onWave(user.id); }}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-white/5 hover:bg-amber-500/15 border border-white/5 hover:border-amber-500/20 text-white/60 hover:text-amber-400 text-[11px] font-medium transition-all"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" /></svg>
+            Saludar
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onInvite(user.id); }}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-white/5 hover:bg-indigo-500/15 border border-white/5 hover:border-indigo-500/20 text-white/60 hover:text-indigo-400 text-[11px] font-medium transition-all"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
+            Invitar
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onFollow(user.id); }}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl border text-[11px] font-medium transition-all ${
+              isFollowing
+                ? 'bg-violet-500/20 border-violet-500/25 text-violet-400'
+                : 'bg-white/5 hover:bg-violet-500/15 border-white/5 hover:border-violet-500/20 text-white/60 hover:text-violet-400'
+            }`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+            {isFollowing ? 'Siguiendo' : 'Seguir'}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -5859,18 +5876,20 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
       
       {/* Notificación de Wave entrante */}
       {incomingWave && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[201] animate-slide-in">
-          <div className="bg-amber-500/90 backdrop-blur-xl text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-pulse border border-amber-400/30">
-            <span className="text-2xl">👋</span>
-            <div>
-              <p className="font-bold text-sm">{incomingWave.fromName}</p>
-              <p className="text-xs opacity-90">te está saludando</p>
+        <div className="fixed top-16 left-[300px] z-[201] animate-in fade-in slide-in-from-left-2 duration-200">
+          <div className="bg-zinc-900/95 backdrop-blur-xl text-white px-4 py-3 rounded-2xl shadow-2xl shadow-black/50 flex items-center gap-3 border border-white/10 w-[240px]">
+            <div className="w-8 h-8 rounded-xl bg-amber-500/15 flex items-center justify-center flex-shrink-0">
+              <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" /></svg>
             </div>
-            <button 
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-white truncate">{incomingWave.fromName}</p>
+              <p className="text-[10px] text-white/40">te está saludando</p>
+            </div>
+            <button
               onClick={() => setIncomingWave(null)}
-              className="ml-2 w-6 h-6 rounded-full bg-black/20 flex items-center justify-center hover:bg-black/40 text-white/80 hover:text-white transition-colors"
+              className="w-6 h-6 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors group flex-shrink-0"
             >
-              ✕
+              <svg className="w-3 h-3 text-white/40 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
           </div>
         </div>
@@ -5891,18 +5910,20 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
 
       {/* Notificación de Nudge entrante */}
       {incomingNudge && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[201] animate-slide-in">
-          <div className="bg-pink-500/90 backdrop-blur-xl text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-pulse border border-pink-400/30">
-            <span className="text-2xl">🔔</span>
-            <div>
-              <p className="font-bold text-sm">{incomingNudge.fromName}</p>
-              <p className="text-xs opacity-90">quiere tu atención</p>
+        <div className="fixed top-16 left-[300px] z-[201] animate-in fade-in slide-in-from-left-2 duration-200">
+          <div className="bg-zinc-900/95 backdrop-blur-xl text-white px-4 py-3 rounded-2xl shadow-2xl shadow-black/50 flex items-center gap-3 border border-white/10 w-[240px]">
+            <div className="w-8 h-8 rounded-xl bg-pink-500/15 flex items-center justify-center flex-shrink-0">
+              <svg className="w-4 h-4 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-white truncate">{incomingNudge.fromName}</p>
+              <p className="text-[10px] text-white/40">quiere tu atención</p>
             </div>
             <button
               onClick={() => setIncomingNudge(null)}
-              className="ml-2 w-6 h-6 rounded-full bg-black/20 flex items-center justify-center hover:bg-black/30"
+              className="w-6 h-6 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors group flex-shrink-0"
             >
-              ✕
+              <svg className="w-3 h-3 text-white/40 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
           </div>
         </div>
@@ -5910,25 +5931,27 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
 
       {/* Notificación de Invite entrante */}
       {incomingInvite && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[201] animate-slide-in">
-          <div className="bg-indigo-600/90 backdrop-blur-xl text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-indigo-400/30">
-            <span className="text-2xl">📍</span>
-            <div>
-              <p className="font-bold text-sm">{incomingInvite.fromName}</p>
-              <p className="text-xs opacity-90">te invita a unirte</p>
+        <div className="fixed top-16 left-[300px] z-[201] animate-in fade-in slide-in-from-left-2 duration-200">
+          <div className="bg-zinc-900/95 backdrop-blur-xl text-white px-4 py-3 rounded-2xl shadow-2xl shadow-black/50 flex items-center gap-3 border border-white/10 w-[260px]">
+            <div className="w-8 h-8 rounded-xl bg-indigo-500/15 flex items-center justify-center flex-shrink-0">
+              <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
             </div>
-            <div className="flex gap-1.5 ml-2">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-white truncate">{incomingInvite.fromName}</p>
+              <p className="text-[10px] text-white/40">te invita a unirte</p>
+            </div>
+            <div className="flex gap-1 flex-shrink-0">
               <button
                 onClick={handleAcceptInvite}
-                className="px-3 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-xs font-bold transition-colors"
+                className="px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/20 text-indigo-400 text-[10px] font-semibold transition-colors"
               >
                 Ir
               </button>
               <button
                 onClick={() => setIncomingInvite(null)}
-                className="px-3 py-1.5 rounded-lg bg-black/20 hover:bg-black/30 text-xs font-bold transition-colors"
+                className="w-6 h-6 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors group"
               >
-                No
+                <svg className="w-3 h-3 text-white/40 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
           </div>
