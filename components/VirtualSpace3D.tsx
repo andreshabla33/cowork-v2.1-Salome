@@ -3636,6 +3636,7 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
   
   // Estado para wave/invite
   const [incomingWave, setIncomingWave] = useState<{ from: string; fromName: string } | null>(null);
+  const lastInteractionRef = useRef<Map<string, number>>(new Map()); // Dedup wave/nudge/invite dual-channel
   
   // Ref para tracking de histéresis (evitar parpadeo en el límite de proximidad)
   const connectedUsersRef = useRef<Set<string>>(new Set());
@@ -4132,6 +4133,11 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
     if (mensaje.type === 'wave') {
       if (mensaje.payload.from === session.user.id) return;
       if (mensaje.payload.to && mensaje.payload.to !== session.user.id) return;
+      // Dedup: ignorar si ya recibimos un wave del mismo usuario en los últimos 500ms (dual-channel)
+      const dedupKey = `wave_${mensaje.payload.from}`;
+      const now = Date.now();
+      if (now - (lastInteractionRef.current.get(dedupKey) || 0) < 500) return;
+      lastInteractionRef.current.set(dedupKey, now);
       playWaveSound();
       setIncomingWave({ from: mensaje.payload.from, fromName: mensaje.payload.fromName });
       setTimeout(() => setIncomingWave(null), 4000);
@@ -4168,6 +4174,10 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
     if (mensaje.type === 'nudge') {
       if (mensaje.payload.from === session.user.id) return;
       if (mensaje.payload.to && mensaje.payload.to !== session.user.id) return;
+      const dedupKey = `nudge_${mensaje.payload.from}`;
+      const now = Date.now();
+      if (now - (lastInteractionRef.current.get(dedupKey) || 0) < 500) return;
+      lastInteractionRef.current.set(dedupKey, now);
       playNudgeSound();
       setIncomingNudge({ from: mensaje.payload.from, fromName: mensaje.payload.fromName });
       setTimeout(() => setIncomingNudge(null), 4000);
@@ -4178,6 +4188,10 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
     if (mensaje.type === 'invite') {
       if (mensaje.payload.from === session.user.id) return;
       if (mensaje.payload.to && mensaje.payload.to !== session.user.id) return;
+      const dedupKey = `invite_${mensaje.payload.from}`;
+      const now = Date.now();
+      if (now - (lastInteractionRef.current.get(dedupKey) || 0) < 500) return;
+      lastInteractionRef.current.set(dedupKey, now);
       playInviteSound();
       setIncomingInvite({
         from: mensaje.payload.from,
@@ -4288,15 +4302,12 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
 
   // Función para enviar wave a un usuario
   const handleWaveUser = useCallback((userId: string) => {
-    if (enviarDataLivekit({ type: 'wave', payload: { to: userId, from: session?.user?.id, fromName: currentUser.name } })) {
-      return;
-    }
+    const payload = { to: userId, from: session?.user?.id, fromName: currentUser.name };
+    // Enviar por LiveKit (si hay conexión activa)
+    enviarDataLivekit({ type: 'wave', payload });
+    // SIEMPRE enviar por Realtime (canal global) para garantizar entrega
     if (webrtcChannelRef.current && session?.user?.id) {
-      webrtcChannelRef.current.send({
-        type: 'broadcast',
-        event: 'wave',
-        payload: { to: userId, from: session.user.id, fromName: currentUser.name }
-      });
+      webrtcChannelRef.current.send({ type: 'broadcast', event: 'wave', payload });
     }
   }, [enviarDataLivekit, session?.user?.id, currentUser.name]);
 
@@ -4330,12 +4341,10 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
   // Fase 3: Nudge — Enviar notificación sonora al usuario
   const handleNudgeUser = useCallback((userId: string) => {
     const payload = { to: userId, from: session?.user?.id, fromName: currentUser.name };
-    if (!enviarDataLivekit({ type: 'nudge', payload })) {
-      if (webrtcChannelRef.current && session?.user?.id) {
-        webrtcChannelRef.current.send({ type: 'broadcast', event: 'nudge', payload });
-      }
+    enviarDataLivekit({ type: 'nudge', payload });
+    if (webrtcChannelRef.current && session?.user?.id) {
+      webrtcChannelRef.current.send({ type: 'broadcast', event: 'nudge', payload });
     }
-    setSelectedRemoteUser(null);
   }, [enviarDataLivekit, session?.user?.id, currentUser.name]);
 
   // Fase 4: Invite to join me — Enviar invitación para que el otro se teleporte a mi posición
@@ -4347,12 +4356,10 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
       x: currentUserEcs.x,
       y: currentUserEcs.y,
     };
-    if (!enviarDataLivekit({ type: 'invite', payload })) {
-      if (webrtcChannelRef.current && session?.user?.id) {
-        webrtcChannelRef.current.send({ type: 'broadcast', event: 'invite', payload });
-      }
+    enviarDataLivekit({ type: 'invite', payload });
+    if (webrtcChannelRef.current && session?.user?.id) {
+      webrtcChannelRef.current.send({ type: 'broadcast', event: 'invite', payload });
     }
-    setSelectedRemoteUser(null);
   }, [enviarDataLivekit, session?.user?.id, currentUser.name, currentUserEcs.x, currentUserEcs.y]);
 
   // Fase 4b: Aceptar invitación recibida
@@ -5897,9 +5904,9 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
           user={selectedRemoteUser}
           screenPosRef={cardScreenPosRef}
           onClose={() => setSelectedRemoteUser(null)}
-          onWave={(id) => { handleWaveUser(id); setSelectedRemoteUser(null); }}
-          onInvite={(id) => { handleInviteUser(id); setSelectedRemoteUser(null); }}
-          onFollow={(id) => { handleFollowUser(id); setSelectedRemoteUser(null); }}
+          onWave={(id) => { handleWaveUser(id); }}
+          onInvite={(id) => { handleInviteUser(id); }}
+          onFollow={(id) => { handleFollowUser(id); }}
           followTargetId={followTargetId}
         />
       )}
