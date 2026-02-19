@@ -58,10 +58,42 @@ const USAR_LIVEKIT = true;
 type AvatarLodLevel = 'high' | 'mid' | 'low';
 type DireccionAvatar = User['direction'] | 'up' | 'down' | 'front-left' | 'front-right' | 'up-left' | 'up-right';
 
+// === AudioContext compartido (fix: navegador bloquea audio hasta primer gesto) ===
+// Se crea una vez y se resume al primer clic/teclado del usuario
+let _sharedAudioCtx: AudioContext | null = null;
+let _audioResumed = false;
+const getAudioCtx = (): AudioContext => {
+  if (!_sharedAudioCtx || _sharedAudioCtx.state === 'closed') {
+    _sharedAudioCtx = new AudioContext();
+  }
+  if (_sharedAudioCtx.state === 'suspended') {
+    _sharedAudioCtx.resume();
+  }
+  return _sharedAudioCtx;
+};
+// Registrar listener global para desbloquear audio al primer gesto del usuario
+if (typeof window !== 'undefined') {
+  const resumeAudio = () => {
+    if (_audioResumed) return;
+    _audioResumed = true;
+    if (_sharedAudioCtx && _sharedAudioCtx.state === 'suspended') {
+      _sharedAudioCtx.resume();
+    } else if (!_sharedAudioCtx) {
+      _sharedAudioCtx = new AudioContext();
+    }
+    window.removeEventListener('click', resumeAudio, true);
+    window.removeEventListener('keydown', resumeAudio, true);
+    window.removeEventListener('touchstart', resumeAudio, true);
+  };
+  window.addEventListener('click', resumeAudio, true);
+  window.addEventListener('keydown', resumeAudio, true);
+  window.addEventListener('touchstart', resumeAudio, true);
+}
+
 // Sonido de teletransportación (estilo LOL - mágico/etéreo)
 const playTeleportSound = () => {
   try {
-    const ctx = new AudioContext();
+    const ctx = getAudioCtx();
     const now = ctx.currentTime;
     
     // Tono mágico ascendente (shimmer)
@@ -131,20 +163,17 @@ const playTeleportSound = () => {
     osc3.start(now + 0.5);
     osc3.stop(now + 0.75);
 
-    setTimeout(() => ctx.close(), 900);
   } catch (e) { /* Audio no disponible */ }
 };
 
 // === Sonidos de notificación (tendencia 2026: soft, minimal, no-intrusivos) ===
 // Inspirados en Slack (beep suave), Discord (pop), Tinder (tada celebratorio)
-// Principios: sine waves suaves, frecuencias medias (600-1200Hz), duración <400ms, fade exponencial
 
 // Wave/saludo: soft double-pop (estilo Slack beep — cálido, amigable)
 const playWaveSound = () => {
   try {
-    const ctx = new AudioContext();
+    const ctx = getAudioCtx();
     const now = ctx.currentTime;
-    // Pop 1: tono cálido con armónico
     const osc1 = ctx.createOscillator();
     const gain1 = ctx.createGain();
     osc1.type = 'sine';
@@ -155,7 +184,6 @@ const playWaveSound = () => {
     osc1.connect(gain1).connect(ctx.destination);
     osc1.start(now);
     osc1.stop(now + 0.15);
-    // Pop 2: ligeramente más alto (resolución amigable)
     const osc2 = ctx.createOscillator();
     const gain2 = ctx.createGain();
     osc2.type = 'sine';
@@ -167,50 +195,45 @@ const playWaveSound = () => {
     osc2.connect(gain2).connect(ctx.destination);
     osc2.start(now + 0.12);
     osc2.stop(now + 0.3);
-    setTimeout(() => ctx.close(), 500);
   } catch (e) { /* Audio no disponible */ }
 };
 
 // Nudge/atención: gentle resonant ding (urgente pero no agresivo)
 const playNudgeSound = () => {
   try {
-    const ctx = new AudioContext();
+    const ctx = getAudioCtx();
     const now = ctx.currentTime;
-    // Ding principal con resonancia
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(1046, now); // C6
+    osc.frequency.setValueAtTime(1046, now);
     osc.frequency.exponentialRampToValueAtTime(988, now + 0.25);
     gain.gain.setValueAtTime(0.18, now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
     osc.connect(gain).connect(ctx.destination);
     osc.start(now);
     osc.stop(now + 0.3);
-    // Sub-armónico suave para calidez
     const sub = ctx.createOscillator();
     const subGain = ctx.createGain();
     sub.type = 'sine';
-    sub.frequency.setValueAtTime(523, now); // C5 (octava abajo)
+    sub.frequency.setValueAtTime(523, now);
     subGain.gain.setValueAtTime(0.06, now);
     subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
     sub.connect(subGain).connect(ctx.destination);
     sub.start(now);
     sub.stop(now + 0.2);
-    setTimeout(() => ctx.close(), 500);
   } catch (e) { /* Audio no disponible */ }
 };
 
 // Invite/invitación: ascending soft chime (positivo, tipo Tinder "tada")
 const playInviteSound = () => {
   try {
-    const ctx = new AudioContext();
+    const ctx = getAudioCtx();
     const now = ctx.currentTime;
-    // 3 notas ascendentes suaves con overlap
     const notes = [
-      { freq: 659, start: 0, dur: 0.18, vol: 0.1 },      // E5
-      { freq: 784, start: 0.1, dur: 0.18, vol: 0.12 },    // G5
-      { freq: 1047, start: 0.2, dur: 0.25, vol: 0.14 },   // C6 (resolución)
+      { freq: 659, start: 0, dur: 0.18, vol: 0.1 },
+      { freq: 784, start: 0.1, dur: 0.18, vol: 0.12 },
+      { freq: 1047, start: 0.2, dur: 0.25, vol: 0.14 },
     ];
     notes.forEach(({ freq, start, dur, vol }) => {
       const osc = ctx.createOscillator();
@@ -224,7 +247,6 @@ const playInviteSound = () => {
       osc.start(now + start);
       osc.stop(now + start + dur);
     });
-    setTimeout(() => ctx.close(), 600);
   } catch (e) { /* Audio no disponible */ }
 };
 
