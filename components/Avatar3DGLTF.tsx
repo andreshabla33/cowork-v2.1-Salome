@@ -174,9 +174,6 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
     clone.traverse((child: any) => {
       if (child.isBone) names.add(child.name);
     });
-    if (names.size > 0) {
-      console.log(`🦴 [${avatarConfig?.nombre || 'unknown'}] Huesos del modelo (${names.size}):`, [...names].slice(0, 15).join(', '));
-    }
     return names;
   }, [clone]);
 

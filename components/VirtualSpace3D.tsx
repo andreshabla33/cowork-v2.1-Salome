@@ -2468,7 +2468,7 @@ const ICE_SERVERS = [
   },
 ];
 
-// ============== PROFILE CARD — estilo bubble proximidad (bg-slate-950/80) ==============
+// ============== PROFILE CARD — posición fija top-left (estilo panel config) ==============
 const ScreenSpaceProfileCard: React.FC<{
   user: User;
   screenPosRef: React.MutableRefObject<{ x: number; y: number } | null>;
@@ -2513,55 +2513,68 @@ const ScreenSpaceProfileCard: React.FC<{
   const statusLabel = user.status === PresenceStatus.AVAILABLE ? 'Disponible' :
     user.status === PresenceStatus.BUSY ? 'Ocupado' :
     user.status === PresenceStatus.AWAY ? 'Ausente' : 'No molestar';
+  const borderClass = user.status === PresenceStatus.AVAILABLE ? 'border-green-500/50' :
+    user.status === PresenceStatus.BUSY ? 'border-red-500/50' :
+    user.status === PresenceStatus.AWAY ? 'border-yellow-500/50' : 'border-purple-500/50';
 
   return (
     <div
       ref={cardRef}
-      className="absolute top-4 right-4 z-[300] pointer-events-auto animate-slide-in"
+      className="fixed z-[300] pointer-events-auto top-16 right-4 animate-in fade-in slide-in-from-right-2 duration-200"
     >
-      <div className="backdrop-blur-xl rounded-2xl border shadow-2xl overflow-hidden bg-slate-950/80 border-slate-600/40">
-        {/* Header */}
-        <div className="flex items-center gap-2 px-3.5 py-2">
+      <div className="bg-white/10 backdrop-blur-2xl rounded-2xl border border-white/15 shadow-2xl shadow-black/40 w-[240px] overflow-hidden">
+        {/* Header con foto + nombre + estado */}
+        <div className="flex items-center gap-3 px-4 pt-3.5 pb-3">
           <div className="relative flex-shrink-0">
-            <div className="w-8 h-8 rounded-full overflow-hidden bg-zinc-800 flex items-center justify-center">
+            <div className={`w-10 h-10 rounded-full border-2 ${borderClass} flex items-center justify-center overflow-hidden bg-zinc-800`}>
               {user.profilePhoto ? (
                 <img src={user.profilePhoto} alt={user.name} className="w-full h-full object-cover" />
               ) : (
-                <span className="text-xs font-bold text-white/80">{user.name.charAt(0).toUpperCase()}</span>
+                <span className="text-sm font-bold text-white/80">{user.name.charAt(0).toUpperCase()}</span>
               )}
             </div>
-            <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-slate-950 ${dotClass}`} />
+            <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-zinc-900 ${dotClass}`} />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-white text-xs font-bold truncate">{user.name}</p>
-            <p className="text-white/50 text-[9px]">{statusLabel}</p>
+            <p className="text-xs font-bold text-white truncate">{user.name}</p>
+            <p className="text-[10px] text-white/40">{statusLabel}</p>
           </div>
+          <button
+            onClick={(e) => { e.stopPropagation(); onClose(); }}
+            className="w-6 h-6 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors group"
+          >
+            <svg className="w-3 h-3 text-white/40 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
-        {/* Acciones — mismo estilo que botones del bubble de proximidad */}
-        <div className="flex items-center gap-1.5 px-3 pb-2.5">
+        {/* Separador */}
+        <div className="mx-4 border-t border-white/5" />
+        {/* Acciones */}
+        <div className="flex items-center gap-1.5 px-3 py-2.5">
           <button
             onClick={(e) => { e.stopPropagation(); onWave(user.id); }}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all bg-white/10 text-white/70 hover:bg-white/20 border border-white/10"
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-white/5 hover:bg-amber-500/15 border border-white/5 hover:border-amber-500/20 text-white/60 hover:text-amber-400 text-[11px] font-medium transition-all"
           >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" /></svg>
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" /></svg>
             Saludar
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onInvite(user.id); }}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all bg-white/10 text-white/70 hover:bg-white/20 border border-white/10"
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-white/5 hover:bg-indigo-500/15 border border-white/5 hover:border-indigo-500/20 text-white/60 hover:text-indigo-400 text-[11px] font-medium transition-all"
           >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
             Invitar
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onFollow(user.id); }}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl border text-[11px] font-medium transition-all ${
               isFollowing
-                ? 'bg-violet-500/20 text-violet-400 border border-violet-500/30'
-                : 'bg-white/10 text-white/70 hover:bg-white/20 border border-white/10'
+                ? 'bg-violet-500/20 border-violet-500/25 text-violet-400'
+                : 'bg-white/5 hover:bg-violet-500/15 border-white/5 hover:border-violet-500/20 text-white/60 hover:text-violet-400'
             }`}
           >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
             {isFollowing ? 'Siguiendo' : 'Seguir'}
           </button>
         </div>
@@ -5639,19 +5652,92 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
         </div>
       )}
 
-      {/* Banner de conversación bloqueada (solo visible cuando alguien bloquea una conversación cercana) */}
-      {conversacionProximaBloqueada && !showroomMode && (
+      {/* Banner de proximidad: notificación + lock conversation (patrón Gather) */}
+      {hasActiveCall && !showroomMode && (
         <div className="absolute top-4 right-4 z-[201] animate-slide-in">
-          <div className="backdrop-blur-xl rounded-2xl border shadow-2xl overflow-hidden bg-red-950/80 border-red-500/40">
+          <div className={`backdrop-blur-xl rounded-2xl border shadow-2xl overflow-hidden ${
+            conversacionBloqueada 
+              ? 'bg-amber-950/80 border-amber-500/40' 
+              : conversacionProximaBloqueada 
+                ? 'bg-red-950/80 border-red-500/40' 
+                : 'bg-slate-950/80 border-slate-600/40'
+          }`}>
+            {/* Header */}
             <div className="flex items-center gap-2 px-3.5 py-2">
-              <svg className="w-3.5 h-3.5 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-              </svg>
+              <span className="text-sm">
+                {conversacionProximaBloqueada ? '🔒' : conversacionBloqueada ? '🔐' : '👥'}
+              </span>
               <div className="flex-1 min-w-0">
-                <p className="text-white text-xs font-bold truncate">Conversación bloqueada</p>
-                <p className="text-white/50 text-[9px]">{conversacionProximaBloqueada.nombre} está en conversación privada</p>
+                <p className="text-white text-xs font-bold truncate">
+                  {conversacionProximaBloqueada 
+                    ? 'Conversación bloqueada' 
+                    : `${usersInCall.map(u => u.name).join(', ')}`}
+                </p>
+                <p className="text-white/50 text-[9px]">
+                  {conversacionProximaBloqueada
+                    ? `${conversacionProximaBloqueada.nombre} está en conversación privada`
+                    : conversacionBloqueada
+                      ? 'Conversación privada — nadie más puede escuchar'
+                      : !currentUser.isMicOn && !currentUser.isCameraOn
+                        ? 'Activa mic o cámara para hablar'
+                        : 'Conversación abierta'}
+                </p>
               </div>
             </div>
+            {/* Acciones (solo si no estoy bloqueado por conversación ajena) */}
+            {!conversacionProximaBloqueada && (
+              <div className="flex items-center gap-1.5 px-3 pb-2.5">
+                {/* Botón mic rápido */}
+                <button
+                  onClick={toggleMic}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                    currentUser.isMicOn 
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                      : 'bg-white/10 text-white/70 hover:bg-white/20 border border-white/10'
+                  }`}
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    {currentUser.isMicOn 
+                      ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                      : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                    }
+                  </svg>
+                  {currentUser.isMicOn ? 'Mic ON' : 'Mic'}
+                </button>
+                {/* Botón cámara rápido */}
+                <button
+                  onClick={toggleCamera}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                    currentUser.isCameraOn 
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                      : 'bg-white/10 text-white/70 hover:bg-white/20 border border-white/10'
+                  }`}
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  {currentUser.isCameraOn ? 'Cam ON' : 'Cam'}
+                </button>
+                {/* Botón lock conversation */}
+                <button
+                  onClick={bloquearConversacion}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                    conversacionBloqueada
+                      ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                      : 'bg-white/10 text-white/70 hover:bg-white/20 border border-white/10'
+                  }`}
+                  title={conversacionBloqueada ? 'Desbloquear conversación' : 'Bloquear conversación (privada)'}
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    {conversacionBloqueada 
+                      ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                      : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                    }
+                  </svg>
+                  {conversacionBloqueada ? 'Privada' : 'Bloquear'}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -5749,9 +5835,6 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
         }}
         isGameActive={isPlayingGame}
         isGameHubOpen={isGameHubOpen}
-        onToggleLock={bloquearConversacion}
-        isLocked={conversacionBloqueada}
-        hasActiveCall={hasActiveCall}
       />}
 
       {/* Input de Chat Flotante - Minimalista */}
@@ -5793,21 +5876,21 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
       
       {/* Notificación de Wave entrante */}
       {incomingWave && (
-        <div className="absolute top-14 right-4 z-[201] animate-slide-in">
-          <div className="backdrop-blur-xl rounded-2xl border shadow-2xl overflow-hidden bg-slate-950/80 border-slate-600/40">
-            <div className="flex items-center gap-2 px-3.5 py-2">
-              <svg className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" /></svg>
-              <div className="flex-1 min-w-0">
-                <p className="text-white text-xs font-bold truncate">{incomingWave.fromName}</p>
-                <p className="text-white/50 text-[9px]">te está saludando</p>
-              </div>
-              <button
-                onClick={() => setIncomingWave(null)}
-                className="w-5 h-5 rounded-md bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors flex-shrink-0"
-              >
-                <svg className="w-2.5 h-2.5 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
+        <div className="fixed top-16 right-4 z-[201] animate-in fade-in slide-in-from-right-2 duration-200">
+          <div className="bg-white/10 backdrop-blur-2xl text-white px-4 py-3 rounded-2xl shadow-2xl shadow-black/40 flex items-center gap-3 border border-white/15 w-[240px]">
+            <div className="w-8 h-8 rounded-xl bg-amber-500/15 flex items-center justify-center flex-shrink-0">
+              <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" /></svg>
             </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-white truncate">{incomingWave.fromName}</p>
+              <p className="text-[10px] text-white/40">te está saludando</p>
+            </div>
+            <button
+              onClick={() => setIncomingWave(null)}
+              className="w-6 h-6 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors group flex-shrink-0"
+            >
+              <svg className="w-3 h-3 text-white/40 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
           </div>
         </div>
       )}
@@ -5818,58 +5901,58 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
           user={selectedRemoteUser}
           screenPosRef={cardScreenPosRef}
           onClose={() => setSelectedRemoteUser(null)}
-          onWave={(id) => { handleWaveUser(id); }}
-          onInvite={(id) => { handleInviteUser(id); }}
-          onFollow={(id) => { handleFollowUser(id); }}
+          onWave={(id) => { handleWaveUser(id); setSelectedRemoteUser(null); }}
+          onInvite={(id) => { handleInviteUser(id); setSelectedRemoteUser(null); }}
+          onFollow={(id) => { handleFollowUser(id); setSelectedRemoteUser(null); }}
           followTargetId={followTargetId}
         />
       )}
 
       {/* Notificación de Nudge entrante */}
       {incomingNudge && (
-        <div className="absolute top-14 right-4 z-[201] animate-slide-in">
-          <div className="backdrop-blur-xl rounded-2xl border shadow-2xl overflow-hidden bg-slate-950/80 border-slate-600/40">
-            <div className="flex items-center gap-2 px-3.5 py-2">
-              <svg className="w-3.5 h-3.5 text-pink-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
-              <div className="flex-1 min-w-0">
-                <p className="text-white text-xs font-bold truncate">{incomingNudge.fromName}</p>
-                <p className="text-white/50 text-[9px]">quiere tu atención</p>
-              </div>
-              <button
-                onClick={() => setIncomingNudge(null)}
-                className="w-5 h-5 rounded-md bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors flex-shrink-0"
-              >
-                <svg className="w-2.5 h-2.5 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
+        <div className="fixed top-16 right-4 z-[201] animate-in fade-in slide-in-from-right-2 duration-200">
+          <div className="bg-white/10 backdrop-blur-2xl text-white px-4 py-3 rounded-2xl shadow-2xl shadow-black/40 flex items-center gap-3 border border-white/15 w-[240px]">
+            <div className="w-8 h-8 rounded-xl bg-pink-500/15 flex items-center justify-center flex-shrink-0">
+              <svg className="w-4 h-4 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
             </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-white truncate">{incomingNudge.fromName}</p>
+              <p className="text-[10px] text-white/40">quiere tu atención</p>
+            </div>
+            <button
+              onClick={() => setIncomingNudge(null)}
+              className="w-6 h-6 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors group flex-shrink-0"
+            >
+              <svg className="w-3 h-3 text-white/40 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
           </div>
         </div>
       )}
 
       {/* Notificación de Invite entrante */}
       {incomingInvite && (
-        <div className="absolute top-14 right-4 z-[201] animate-slide-in">
-          <div className="backdrop-blur-xl rounded-2xl border shadow-2xl overflow-hidden bg-slate-950/80 border-slate-600/40">
-            <div className="flex items-center gap-2 px-3.5 py-2">
-              <svg className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
-              <div className="flex-1 min-w-0">
-                <p className="text-white text-xs font-bold truncate">{incomingInvite.fromName}</p>
-                <p className="text-white/50 text-[9px]">te invita a unirte</p>
-              </div>
-              <div className="flex gap-1 flex-shrink-0">
-                <button
-                  onClick={handleAcceptInvite}
-                  className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 border border-indigo-500/30"
-                >
-                  Ir
-                </button>
-                <button
-                  onClick={() => setIncomingInvite(null)}
-                  className="w-5 h-5 rounded-md bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors flex-shrink-0"
-                >
-                  <svg className="w-2.5 h-2.5 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
-              </div>
+        <div className="fixed top-16 right-4 z-[201] animate-in fade-in slide-in-from-right-2 duration-200">
+          <div className="bg-white/10 backdrop-blur-2xl text-white px-4 py-3 rounded-2xl shadow-2xl shadow-black/40 flex items-center gap-3 border border-white/15 w-[260px]">
+            <div className="w-8 h-8 rounded-xl bg-indigo-500/15 flex items-center justify-center flex-shrink-0">
+              <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-white truncate">{incomingInvite.fromName}</p>
+              <p className="text-[10px] text-white/40">te invita a unirte</p>
+            </div>
+            <div className="flex gap-1 flex-shrink-0">
+              <button
+                onClick={handleAcceptInvite}
+                className="px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/20 text-indigo-400 text-[10px] font-semibold transition-colors"
+              >
+                Ir
+              </button>
+              <button
+                onClick={() => setIncomingInvite(null)}
+                className="w-6 h-6 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors group"
+              >
+                <svg className="w-3 h-3 text-white/40 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
             </div>
           </div>
         </div>

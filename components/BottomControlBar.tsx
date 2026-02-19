@@ -71,9 +71,6 @@ interface BottomControlBarProps {
   onOpenGameHub?: () => void;
   isGameActive?: boolean;
   isGameHubOpen?: boolean;
-  onToggleLock?: () => void;
-  isLocked?: boolean;
-  hasActiveCall?: boolean;
 }
 
 // Configuración de estados con iconos y colores (estilo 2026)
@@ -110,9 +107,6 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
   onOpenGameHub,
   isGameActive = false,
   isGameHubOpen = false,
-  onToggleLock,
-  isLocked = false,
-  hasActiveCall = false,
 }) => {
   const { currentUser, updateStatus } = useStore();
   const emojis = ['👍', '🔥', '❤️', '👏', '😂', '😮', '🚀', '✨'];
@@ -665,29 +659,6 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
             icon={<IconGamepad />}
             tooltip="Mini Juegos"
           />
-        )}
-
-        {/* Bloquear conversación — solo visible cuando hay proximidad activa */}
-        {hasActiveCall && onToggleLock && !isGameActive && (
-          <>
-            <div className="w-px h-6 bg-white/10 mx-0.5"></div>
-            <button
-              onClick={onToggleLock}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 ${
-                isLocked
-                  ? 'bg-amber-500/20 text-amber-400 ring-1 ring-amber-500/30'
-                  : 'bg-transparent text-white/70 hover:bg-white/10 hover:text-white'
-              }`}
-              title={isLocked ? 'Desbloquear conversación' : 'Bloquear conversación (privada)'}
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                {isLocked
-                  ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                  : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
-                }
-              </svg>
-            </button>
-          </>
         )}
 
         {showRecordingButton && !isGameActive && (
