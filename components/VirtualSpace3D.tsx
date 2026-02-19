@@ -2520,9 +2520,9 @@ const ScreenSpaceProfileCard: React.FC<{
   return (
     <div
       ref={cardRef}
-      className="fixed z-[300] pointer-events-auto top-16 left-[300px] animate-in fade-in slide-in-from-left-2 duration-200"
+      className="fixed z-[300] pointer-events-auto top-16 right-4 animate-in fade-in slide-in-from-right-2 duration-200"
     >
-      <div className="bg-zinc-900/95 backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl shadow-black/50 w-[240px] overflow-hidden">
+      <div className="bg-white/10 backdrop-blur-2xl rounded-2xl border border-white/15 shadow-2xl shadow-black/40 w-[240px] overflow-hidden">
         {/* Header con foto + nombre + estado */}
         <div className="flex items-center gap-3 px-4 pt-3.5 pb-3">
           <div className="relative flex-shrink-0">
@@ -5876,8 +5876,8 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
       
       {/* Notificación de Wave entrante */}
       {incomingWave && (
-        <div className="fixed top-16 left-[300px] z-[201] animate-in fade-in slide-in-from-left-2 duration-200">
-          <div className="bg-zinc-900/95 backdrop-blur-xl text-white px-4 py-3 rounded-2xl shadow-2xl shadow-black/50 flex items-center gap-3 border border-white/10 w-[240px]">
+        <div className="fixed top-16 right-4 z-[201] animate-in fade-in slide-in-from-right-2 duration-200">
+          <div className="bg-white/10 backdrop-blur-2xl text-white px-4 py-3 rounded-2xl shadow-2xl shadow-black/40 flex items-center gap-3 border border-white/15 w-[240px]">
             <div className="w-8 h-8 rounded-xl bg-amber-500/15 flex items-center justify-center flex-shrink-0">
               <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" /></svg>
             </div>
@@ -5910,8 +5910,8 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
 
       {/* Notificación de Nudge entrante */}
       {incomingNudge && (
-        <div className="fixed top-16 left-[300px] z-[201] animate-in fade-in slide-in-from-left-2 duration-200">
-          <div className="bg-zinc-900/95 backdrop-blur-xl text-white px-4 py-3 rounded-2xl shadow-2xl shadow-black/50 flex items-center gap-3 border border-white/10 w-[240px]">
+        <div className="fixed top-16 right-4 z-[201] animate-in fade-in slide-in-from-right-2 duration-200">
+          <div className="bg-white/10 backdrop-blur-2xl text-white px-4 py-3 rounded-2xl shadow-2xl shadow-black/40 flex items-center gap-3 border border-white/15 w-[240px]">
             <div className="w-8 h-8 rounded-xl bg-pink-500/15 flex items-center justify-center flex-shrink-0">
               <svg className="w-4 h-4 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
             </div>
@@ -5931,8 +5931,8 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
 
       {/* Notificación de Invite entrante */}
       {incomingInvite && (
-        <div className="fixed top-16 left-[300px] z-[201] animate-in fade-in slide-in-from-left-2 duration-200">
-          <div className="bg-zinc-900/95 backdrop-blur-xl text-white px-4 py-3 rounded-2xl shadow-2xl shadow-black/50 flex items-center gap-3 border border-white/10 w-[260px]">
+        <div className="fixed top-16 right-4 z-[201] animate-in fade-in slide-in-from-right-2 duration-200">
+          <div className="bg-white/10 backdrop-blur-2xl text-white px-4 py-3 rounded-2xl shadow-2xl shadow-black/40 flex items-center gap-3 border border-white/15 w-[260px]">
             <div className="w-8 h-8 rounded-xl bg-indigo-500/15 flex items-center justify-center flex-shrink-0">
               <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
             </div>
