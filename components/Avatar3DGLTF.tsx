@@ -85,15 +85,6 @@ function remapAnimationTracks(clip: THREE.AnimationClip, boneNames: Set<string>,
       return track;
     }
 
-    // Match parcial: el nombre normalizado del track contiene o es contenido por algún hueso
-    for (const bn of boneNames) {
-      const bnNorm = normalizeBoneName(bn).toLowerCase();
-      if (bnNorm === normalized || (bnNorm.length > 3 && normalized.includes(bnNorm)) || (normalized.length > 3 && bnNorm.includes(normalized))) {
-        track.name = bn + property;
-        return track;
-      }
-    }
-
     return track;
   }).filter(track => {
     const dotIdx = track.name.indexOf('.');
@@ -195,6 +186,7 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
     clone.traverse((child: any) => {
       if (child.isBone) names.add(child.name);
     });
+    console.log(`🦴 ${avatarConfig?.nombre || 'avatar'}: ${names.size} huesos —`, [...names].slice(0, 10).join(', '), names.size > 10 ? '...' : '');
     return names;
   }, [clone]);
 
@@ -323,8 +315,8 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
         if (r && r.clips.length > 0) {
           const clip = remapAnimationTracks(r.clips[0], boneNames, r.strip);
           const matchRate = (clip as any)._matchRate ?? 0;
-          // Solo usar la animación si al menos 10% de los tracks coinciden con el esqueleto
-          if (matchRate < 0.1 && r.clips[0].tracks.length > 0) {
+          // Solo usar la animación si al menos 30% de los tracks coinciden con el esqueleto
+          if (matchRate < 0.3 && r.clips[0].tracks.length > 0) {
             console.warn(`⚠️ ${r.nombre}: solo ${Math.round(matchRate * 100)}% tracks matched — descartada (esqueleto incompatible)`);
             return;
           }
