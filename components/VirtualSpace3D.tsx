@@ -5708,92 +5708,17 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
         </div>
       )}
 
-      {/* Banner de proximidad: notificación + lock conversation (patrón Gather) */}
-      {hasActiveCall && !showroomMode && (
+      {/* Banner de proximidad: solo notificación de conversación bloqueada por otro usuario */}
+      {hasActiveCall && !showroomMode && conversacionProximaBloqueada && (
         <div className="absolute top-4 right-4 z-[201] animate-slide-in">
-          <div className={`backdrop-blur-xl rounded-2xl border shadow-2xl overflow-hidden ${
-            conversacionBloqueada 
-              ? 'bg-amber-950/80 border-amber-500/40' 
-              : conversacionProximaBloqueada 
-                ? 'bg-red-950/80 border-red-500/40' 
-                : 'bg-slate-950/80 border-slate-600/40'
-          }`}>
-            {/* Header */}
+          <div className="backdrop-blur-xl rounded-2xl border shadow-2xl overflow-hidden bg-red-950/80 border-red-500/40">
             <div className="flex items-center gap-2 px-3.5 py-2">
-              <span className="text-sm">
-                {conversacionProximaBloqueada ? '🔒' : conversacionBloqueada ? '🔐' : '👥'}
-              </span>
+              <span className="text-sm">🔒</span>
               <div className="flex-1 min-w-0">
-                <p className="text-white text-xs font-bold truncate">
-                  {conversacionProximaBloqueada 
-                    ? 'Conversación bloqueada' 
-                    : `${usersInCall.map(u => u.name).join(', ')}`}
-                </p>
-                <p className="text-white/50 text-[9px]">
-                  {conversacionProximaBloqueada
-                    ? `${conversacionProximaBloqueada.nombre} está en conversación privada`
-                    : conversacionBloqueada
-                      ? 'Conversación privada — nadie más puede escuchar'
-                      : !currentUser.isMicOn && !currentUser.isCameraOn
-                        ? 'Activa mic o cámara para hablar'
-                        : 'Conversación abierta'}
-                </p>
+                <p className="text-white text-xs font-bold truncate">Conversación bloqueada</p>
+                <p className="text-white/50 text-[9px]">{conversacionProximaBloqueada.nombre} está en conversación privada</p>
               </div>
             </div>
-            {/* Acciones (solo si no estoy bloqueado por conversación ajena) */}
-            {!conversacionProximaBloqueada && (
-              <div className="flex items-center gap-1.5 px-3 pb-2.5">
-                {/* Botón mic rápido */}
-                <button
-                  onClick={toggleMic}
-                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
-                    currentUser.isMicOn 
-                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
-                      : 'bg-white/10 text-white/70 hover:bg-white/20 border border-white/10'
-                  }`}
-                >
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    {currentUser.isMicOn 
-                      ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                      : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                    }
-                  </svg>
-                  {currentUser.isMicOn ? 'Mic ON' : 'Mic'}
-                </button>
-                {/* Botón cámara rápido */}
-                <button
-                  onClick={toggleCamera}
-                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
-                    currentUser.isCameraOn 
-                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
-                      : 'bg-white/10 text-white/70 hover:bg-white/20 border border-white/10'
-                  }`}
-                >
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                  </svg>
-                  {currentUser.isCameraOn ? 'Cam ON' : 'Cam'}
-                </button>
-                {/* Botón lock conversation */}
-                <button
-                  onClick={bloquearConversacion}
-                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
-                    conversacionBloqueada
-                      ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                      : 'bg-white/10 text-white/70 hover:bg-white/20 border border-white/10'
-                  }`}
-                  title={conversacionBloqueada ? 'Desbloquear conversación' : 'Bloquear conversación (privada)'}
-                >
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    {conversacionBloqueada 
-                      ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                      : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
-                    }
-                  </svg>
-                  {conversacionBloqueada ? 'Privada' : 'Bloquear'}
-                </button>
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -5819,6 +5744,9 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
         avatarConfig={currentUser.avatarConfig!}
         showShareButton={usersInCall.length > 0}
         showRecordingButton={usersInCall.length > 0}
+        onToggleLock={bloquearConversacion}
+        isLocked={conversacionBloqueada}
+        showLockButton={usersInCall.length > 0 && !conversacionProximaBloqueada}
         currentStream={stream}
         onCameraSettingsChange={(newSettings) => {
           setCameraSettings(newSettings);

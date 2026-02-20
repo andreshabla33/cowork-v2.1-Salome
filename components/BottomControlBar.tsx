@@ -71,6 +71,9 @@ interface BottomControlBarProps {
   onOpenGameHub?: () => void;
   isGameActive?: boolean;
   isGameHubOpen?: boolean;
+  onToggleLock?: () => void;
+  isLocked?: boolean;
+  showLockButton?: boolean;
 }
 
 // Configuración de estados con iconos y colores (estilo 2026)
@@ -107,6 +110,9 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
   onOpenGameHub,
   isGameActive = false,
   isGameHubOpen = false,
+  onToggleLock,
+  isLocked = false,
+  showLockButton = false,
 }) => {
   const { currentUser, updateStatus } = useStore();
   const emojis = ['👍', '🔥', '❤️', '👏', '😂', '😮', '🚀', '✨'];
@@ -623,6 +629,18 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
           </>
         )}
 
+        {/* Bloquear conversación (solo visible cuando hay usuarios en proximidad) */}
+        {showLockButton && onToggleLock && !isGameActive && (
+          <ControlButton 
+            onClick={onToggleLock} 
+            isActive={isLocked} 
+            activeColor="bg-amber-500 text-white" 
+            inactiveColor="bg-transparent text-white/70 hover:bg-white/10 hover:text-white"
+            icon={<IconLock on={isLocked} />}
+            tooltip={isLocked ? "Desbloquear conversación" : "Bloquear conversación (privada)"}
+          />
+        )}
+
         <div className={`${isGameActive ? 'h-px w-6' : 'w-px h-6'} bg-white/10 mx-0.5`}></div>
 
         {/* Chat */}
@@ -792,5 +810,14 @@ const IconGamepad = () => (
 const IconMiniMode = () => (
   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 14H14V20M4 10H10V4M14 10L21 3M3 21L10 14" />
+  </svg>
+);
+
+const IconLock = ({ on }: { on: boolean }) => (
+  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    {on 
+      ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+      : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+    }
   </svg>
 );
