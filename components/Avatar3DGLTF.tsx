@@ -218,32 +218,12 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
   // Obtener nodos del grafo clonado (necesario para animated components si los hubiera)
   const { nodes } = useGraph(clone);
 
-  // Auto-corrección de escala y posición Y (dinámico para cualquier modelo)
-  // Usar scene original (del GLTF loader, con matrices correctas) para bounding box
+  // Escala viene 100% de la BD (avatarConfig.escala). No auto-escalar.
+  // Box3.setFromObject NO funciona con SkinnedMesh (reporta h=0.027 en vez de 1.7).
+  // Solo calcular Y-offset para posicionar la base del modelo en Y=0.
   const { modelScaleCorrection, modelYOffset } = useMemo(() => {
-    // Box3.setFromObject en scene original — el GLTF loader ya resolvió las matrices
-    const box = new THREE.Box3().setFromObject(scene);
-    
-    if (box.isEmpty()) return { modelScaleCorrection: 1, modelYOffset: 0 };
-
-    const size = box.getSize(new THREE.Vector3());
-    const height = Math.max(size.y, 0.001);
-    const TARGET_HEIGHT = 1.7;
-
-    // Escala: normalizar a TARGET_HEIGHT si está fuera de rango razonable
-    let scaleCorrection = 1;
-    if (height < 1.2 || height > 2.5) {
-      scaleCorrection = TARGET_HEIGHT / height;
-    }
-
-    // Clamp de seguridad
-    scaleCorrection = Math.max(0.1, Math.min(scaleCorrection, 100));
-
-    // Posición Y: base del modelo en Y=0
-    const yOffset = -box.min.y;
-
-    console.log(`📐 ${avatarConfig?.nombre || 'avatar'}: h=${height.toFixed(4)} scale=${scaleCorrection.toFixed(2)} yOff=${yOffset.toFixed(4)}`);
-    return { modelScaleCorrection: scaleCorrection, modelYOffset: yOffset };
+    console.log(`📐 ${avatarConfig?.nombre || 'avatar'}: escala BD=${avatarConfig?.escala || 1} (sin auto-scale)`);
+    return { modelScaleCorrection: 1, modelYOffset: 0 };
   }, [scene]);
 
   // Recopilar nombres de huesos del modelo
