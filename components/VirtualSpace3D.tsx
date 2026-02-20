@@ -3770,13 +3770,15 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
   // Set de IDs en rango de audio espacial — cam bubbles SOLO para estos usuarios
   const usersInAudioRangeIds = useMemo(() => new Set(usersInAudioRange.map(u => u.id)), [usersInAudioRange]);
 
-  // Sincronizar tracks locales cuando cambian mic/cam/screen (solo si hay proximidad)
+  // Sincronizar tracks locales cuando cambian mic/cam/screen (si hay alguien en proximidad O rango espacial)
+  const hasAnyoneNearbyForSync = hasActiveCall || usersInAudioRange.length > 0;
   useEffect(() => {
-    if (!USAR_LIVEKIT || !livekitConnected || !hasActiveCall) return;
+    if (!USAR_LIVEKIT || !livekitConnected || !hasAnyoneNearbyForSync) return;
+    console.log(`[LIVEKIT] Sincronizando tracks por cambio de estado — mic=${currentUser.isMicOn} cam=${currentUser.isCameraOn} screen=${currentUser.isScreenSharing} proximidad=${hasActiveCall} rangoEspacial=${usersInAudioRange.length > 0}`);
     sincronizarTracksLocales().catch((error) => {
       console.warn('Error sincronizando tracks LiveKit:', error);
     });
-  }, [USAR_LIVEKIT, livekitConnected, hasActiveCall, currentUser.isMicOn, currentUser.isCameraOn, currentUser.isScreenSharing, stream, screenStream, sincronizarTracksLocales]);
+  }, [USAR_LIVEKIT, livekitConnected, hasAnyoneNearbyForSync, hasActiveCall, currentUser.isMicOn, currentUser.isCameraOn, currentUser.isScreenSharing, stream, screenStream, sincronizarTracksLocales]);
 
   // Calcular distancias de usuarios para audio espacial
   const userDistances = useMemo(() => {
@@ -4035,12 +4037,11 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
       });
       console.log('[LIVEKIT] Sin usuarios cercanos — tracks locales despublicados');
     } else if (!hasActiveCall && prevHasActiveCall && usersInAudioRange.length > 0) {
-      // Salieron de proximidad pero quedan en rango audio → despublicar video, mantener audio
+      // Salieron de proximidad pero quedan en rango audio → mantener video (cam bubble) + audio
+      // Solo despublicar screen share (no tiene sentido a distancia)
       if (publishDelayTimerRef.current) { clearTimeout(publishDelayTimerRef.current); publishDelayTimerRef.current = null; }
-      ['video', 'screen'].forEach(tipo => {
-        despublicarTrackLocal(tipo as 'audio' | 'video' | 'screen').catch(() => {});
-      });
-      console.log('[LIVEKIT] Sin proximidad pero con rango audio — video despublicado, audio mantenido');
+      despublicarTrackLocal('screen').catch(() => {});
+      console.log('[LIVEKIT] Sin proximidad pero con rango audio — video+audio mantenidos (cam bubble), screen despublicado');
     } else if (hasActiveCall && !prevHasActiveCall) {
       // Alguien entró en proximidad → publicar tracks locales con delay corto para estabilidad
       if (publishDelayTimerRef.current) clearTimeout(publishDelayTimerRef.current);
