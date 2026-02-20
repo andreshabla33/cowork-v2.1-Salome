@@ -160,28 +160,29 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
   // Obtener nodos del grafo clonado (necesario para animated components si los hubiera)
   const { nodes } = useGraph(clone);
 
-  // Auto-corrección de escala y posición Y
+  // Auto-corrección de escala y posición Y (dinámico para cualquier modelo)
   const { modelScaleCorrection, modelYOffset } = useMemo(() => {
-    const localBox = new THREE.Box3();
-    clone.traverse((child: any) => {
-      if ((child.isMesh || child.isSkinnedMesh) && child.geometry) {
-        child.geometry.computeBoundingBox();
-        if (child.geometry.boundingBox) {
-          localBox.union(child.geometry.boundingBox);
-        }
-      }
-    });
-    const localSize = localBox.getSize(new THREE.Vector3());
-    let scaleCorrection = 1;
-    if (localSize.y > 0 && localSize.y < 0.5) {
-      const TARGET_HEIGHT = 1.5;
-      scaleCorrection = TARGET_HEIGHT / localSize.y;
-    }
+    // Calcular bounding box real en world space
     const worldBox = new THREE.Box3().setFromObject(clone);
-    let yOffset = 0;
-    if (!worldBox.isEmpty() && worldBox.min.y > 0.5) {
-      yOffset = -worldBox.min.y;
+    if (worldBox.isEmpty()) return { modelScaleCorrection: 1, modelYOffset: 0 };
+
+    const worldSize = worldBox.getSize(new THREE.Vector3());
+    const TARGET_HEIGHT = 1.7; // Altura objetivo en unidades del mundo (~1.7m)
+    const MIN_HEIGHT = 0.3;
+    const MAX_HEIGHT = 5.0;
+
+    // Escalar si el modelo es demasiado pequeño o demasiado grande
+    let scaleCorrection = 1;
+    if (worldSize.y > 0) {
+      if (worldSize.y < MIN_HEIGHT || worldSize.y > MAX_HEIGHT) {
+        scaleCorrection = TARGET_HEIGHT / worldSize.y;
+      }
     }
+
+    // Ajustar Y para que la base del modelo esté en Y=0 (sobre el piso)
+    // yOffset es en espacio local del modelo (antes de escalar) — se multiplicará por avatarScale en el render
+    const yOffset = -worldBox.min.y;
+
     return { modelScaleCorrection: scaleCorrection, modelYOffset: yOffset };
   }, [clone]);
 
