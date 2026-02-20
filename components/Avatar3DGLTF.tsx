@@ -45,6 +45,36 @@ const DEFAULT_MODEL_URL = `${STORAGE_BASE}/Monica_Idle.glb`;
 // Animaciones que hacen loop
 const LOOP_ANIMATIONS: AnimationState[] = ['idle', 'walk', 'run', 'dance'];
 
+// Tabla de equivalencias entre convenciones de nombres de huesos
+// Mixamo (post-strip) → nombres alternativos comunes en otros esqueletos
+const BONE_ALIASES: Record<string, string[]> = {
+  'hips': ['hips', 'pelvis', 'root'],
+  'spine': ['spine', 'spine01', 'spine1'],
+  'spine1': ['spine1', 'spine02', 'spine2', 'chest'],
+  'spine2': ['spine2', 'spine03', 'spine3', 'upperchest'],
+  'neck': ['neck', 'neck01'],
+  'head': ['head', 'head01'],
+  'headtop_end': ['headtop_end', 'headtop', 'head_end'],
+  'leftshoulder': ['leftshoulder', 'leftcollar', 'l_shoulder', 'shoulder_l'],
+  'leftarm': ['leftarm', 'leftuparm', 'l_upperarm', 'upperarm_l'],
+  'leftforearm': ['leftforearm', 'leftlowarm', 'l_forearm', 'forearm_l', 'leftlowerarm'],
+  'lefthand': ['lefthand', 'l_hand', 'hand_l'],
+  'rightshoulder': ['rightshoulder', 'rightcollar', 'r_shoulder', 'shoulder_r'],
+  'rightarm': ['rightarm', 'rightuparm', 'r_upperarm', 'upperarm_r'],
+  'rightforearm': ['rightforearm', 'rightlowarm', 'r_forearm', 'forearm_r', 'rightlowerarm'],
+  'righthand': ['righthand', 'r_hand', 'hand_r'],
+  'leftupleg': ['leftupleg', 'leftthigh', 'l_thigh', 'thigh_l', 'leftupperleg'],
+  'leftleg': ['leftleg', 'leftcalf', 'l_calf', 'calf_l', 'leftlowerleg', 'leftknee'],
+  'leftfoot': ['leftfoot', 'l_foot', 'foot_l'],
+  'lefttoebase': ['lefttoebase', 'lefttoe', 'l_toe', 'toe_l'],
+  'lefttoe_end': ['lefttoe_end', 'lefttoeend'],
+  'rightupleg': ['rightupleg', 'rightthigh', 'r_thigh', 'thigh_r', 'rightupperleg'],
+  'rightleg': ['rightleg', 'rightcalf', 'r_calf', 'calf_r', 'rightlowerleg', 'rightknee'],
+  'rightfoot': ['rightfoot', 'r_foot', 'foot_r'],
+  'righttoebase': ['righttoebase', 'righttoe', 'r_toe', 'toe_r'],
+  'righttoe_end': ['righttoe_end', 'righttoeend'],
+};
+
 // Normalizar nombre de hueso: quitar prefijos comunes de Mixamo, Meshy AI, Blender, etc.
 function normalizeBoneName(name: string): string {
   let n = name;
@@ -68,6 +98,24 @@ function remapAnimationTracks(clip: THREE.AnimationClip, boneNames: Set<string>,
     normalizedBoneMap.set(normalizeBoneName(bn).toLowerCase(), bn);
   }
 
+  // Pre-calcular mapa inverso de aliases: para cada alias → nombre real del hueso del modelo
+  const aliasToModelBone = new Map<string, string>();
+  for (const bn of boneNames) {
+    const normalizedLower = normalizeBoneName(bn).toLowerCase();
+    // Buscar en qué grupo de aliases cae este hueso del modelo
+    for (const [, aliases] of Object.entries(BONE_ALIASES)) {
+      if (aliases.includes(normalizedLower)) {
+        // Registrar TODOS los aliases de este grupo apuntando al hueso real del modelo
+        for (const alias of aliases) {
+          if (!aliasToModelBone.has(alias)) {
+            aliasToModelBone.set(alias, bn);
+          }
+        }
+        break;
+      }
+    }
+  }
+
   remapped.tracks = remapped.tracks.map(track => {
     const dotIdx = track.name.indexOf('.');
     if (dotIdx === -1) return track;
@@ -77,11 +125,18 @@ function remapAnimationTracks(clip: THREE.AnimationClip, boneNames: Set<string>,
     // Ya coincide con un hueso del modelo
     if (boneNames.has(boneName)) return track;
 
-    // Normalizar y buscar match
+    // Normalizar y buscar match directo
     const normalized = normalizeBoneName(boneName).toLowerCase();
     const matchedBone = normalizedBoneMap.get(normalized);
     if (matchedBone) {
       track.name = matchedBone + property;
+      return track;
+    }
+
+    // Buscar match por aliases (ej: Mixamo "Spine1" → modelo "Spine02")
+    const aliasMatch = aliasToModelBone.get(normalized);
+    if (aliasMatch) {
+      track.name = aliasMatch + property;
       return track;
     }
 
@@ -165,17 +220,21 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
 
   // Auto-corrección de escala y posición Y (dinámico para cualquier modelo)
   const { modelScaleCorrection, modelYOffset } = useMemo(() => {
-    // Estrategia multi-nivel para calcular bounding box correctamente:
-    // 1) Montar temporalmente en una escena auxiliar para que updateWorldMatrix funcione
-    // 2) Calcular desde geometrías con matrices actualizadas
-    // 3) Fallback a setFromObject
-    // 4) Clamp de seguridad para evitar escalas absurdas
-    
-    const tempScene = new THREE.Scene();
-    tempScene.add(clone);
-    clone.updateWorldMatrix(true, true);
-    
-    // Método 1: Calcular desde geometrías individuales (más confiable para SkinnedMesh)
+    // Muchos modelos GLB (Mixamo, Meshy AI, etc.) tienen la escala en nodos intermedios
+    // (Armature, Scene, etc.) y geometrías muy pequeñas. Box3.setFromObject() falla con
+    // SkinnedMesh porque depende de la pose de los huesos.
+    // Estrategia: calcular la escala acumulada del nodo raíz y multiplicar por el bbox de geometría.
+
+    // 1) Obtener escala acumulada del árbol de nodos (Armature suele tener scale=100)
+    let rootScale = 1;
+    clone.traverse((child: any) => {
+      if (child.scale && child !== clone) {
+        const s = Math.max(child.scale.x, child.scale.y, child.scale.z);
+        if (s > rootScale) rootScale = s;
+      }
+    });
+
+    // 2) Calcular bounding box desde geometrías (sin matrixWorld, que puede no estar actualizada)
     const geoBox = new THREE.Box3();
     let hasGeometry = false;
     clone.traverse((child: any) => {
@@ -183,57 +242,44 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
         child.geometry.computeBoundingBox();
         const bb = child.geometry.boundingBox;
         if (bb && !bb.isEmpty()) {
-          const transformed = bb.clone();
-          transformed.applyMatrix4(child.matrixWorld);
-          geoBox.union(transformed);
+          geoBox.union(bb);
           hasGeometry = true;
         }
       }
     });
 
-    // Método 2: Fallback a setFromObject
+    // 3) Fallback: calcular desde posiciones de huesos
     if (!hasGeometry || geoBox.isEmpty()) {
-      geoBox.setFromObject(clone);
-    }
-
-    // Método 3: Si aún falla, calcular desde posiciones de huesos (bind pose)
-    if (geoBox.isEmpty() || geoBox.getSize(new THREE.Vector3()).y < 0.1) {
-      const boneBox = new THREE.Box3();
+      clone.updateWorldMatrix(true, true);
       clone.traverse((child: any) => {
         if (child.isBone) {
-          const worldPos = new THREE.Vector3();
-          child.getWorldPosition(worldPos);
-          boneBox.expandByPoint(worldPos);
+          const pos = new THREE.Vector3();
+          child.getWorldPosition(pos);
+          geoBox.expandByPoint(pos);
         }
       });
-      if (!boneBox.isEmpty() && boneBox.getSize(new THREE.Vector3()).y > geoBox.getSize(new THREE.Vector3()).y) {
-        geoBox.copy(boneBox);
-      }
     }
-
-    // Quitar de la escena temporal
-    tempScene.remove(clone);
 
     if (geoBox.isEmpty()) return { modelScaleCorrection: 1, modelYOffset: 0 };
 
-    const worldSize = geoBox.getSize(new THREE.Vector3());
+    const rawSize = geoBox.getSize(new THREE.Vector3());
+    // Altura real = altura de geometría × escala del nodo raíz
+    const effectiveHeight = Math.max(rawSize.y * rootScale, 0.01);
     const TARGET_HEIGHT = 1.7;
 
-    // Escala: normalizar modelos fuera de rango razonable (0.5 - 3.0)
     let scaleCorrection = 1;
-    const effectiveHeight = Math.max(worldSize.y, 0.01);
     if (effectiveHeight < 0.5 || effectiveHeight > 3.0) {
       scaleCorrection = TARGET_HEIGHT / effectiveHeight;
     }
 
-    // Clamp de seguridad: escala nunca mayor a 10x ni menor a 0.1x
-    scaleCorrection = Math.max(0.1, Math.min(scaleCorrection, 10));
+    // Clamp de seguridad: nunca mayor a 200x ni menor a 0.01x
+    // (modelos Mixamo pueden necesitar escalas altas si la geometría es en metros)
+    scaleCorrection = Math.max(0.01, Math.min(scaleCorrection, 200));
 
     // Posición Y: ajustar para que la base del modelo esté en Y=0
-    // No multiplicar por scaleCorrection aquí — el render ya multiplica por avatarScale
     const yOffset = -geoBox.min.y;
 
-    console.log(`📐 ${avatarConfig?.nombre || 'avatar'}: h=${effectiveHeight.toFixed(2)} scale=${scaleCorrection.toFixed(2)} yOff=${yOffset.toFixed(2)}`);
+    console.log(`📐 ${avatarConfig?.nombre || 'avatar'}: rawH=${rawSize.y.toFixed(4)} rootScale=${rootScale.toFixed(1)} effectiveH=${effectiveHeight.toFixed(2)} scale=${scaleCorrection.toFixed(2)} yOff=${yOffset.toFixed(2)}`);
     return { modelScaleCorrection: scaleCorrection, modelYOffset: yOffset };
   }, [clone]);
 
