@@ -696,8 +696,14 @@ export const WorkspaceLayout: React.FC = () => {
 
         <div className="flex-1 relative overflow-hidden">
           {/* VirtualSpace3D siempre montado pero oculto cuando no está activo
-              Esto mantiene el stream y conexiones WebRTC activas */}
-          <div className={activeSubTab === 'space' ? 'h-full w-full' : 'hidden'} data-tour-step="space-canvas">
+              Esto mantiene el stream y conexiones WebRTC activas
+              IMPORTANTE: Usar visibility:hidden en vez de display:none para que los <audio>
+              elements de LiveKit sigan reproduciéndose cuando se navega al chat u otra tab */}
+          <div 
+            className={activeSubTab === 'space' ? 'h-full w-full' : 'absolute inset-0 pointer-events-none'} 
+            style={activeSubTab !== 'space' ? { visibility: 'hidden' } : undefined}
+            data-tour-step="space-canvas"
+          >
             <VirtualSpace3D theme={theme} isGameHubOpen={showGameHub} isPlayingGame={isPlayingGame} />
           </div>
           {activeSubTab !== 'space' && (

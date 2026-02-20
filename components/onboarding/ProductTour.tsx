@@ -21,8 +21,8 @@ const PASOS_GENERALES: DriveStep[] = [
   {
     element: '[data-tour-step="space-canvas"]',
     popover: {
-      title: '🌐 Tu espacio virtual',
-      description: 'Aquí es donde tu equipo trabaja en tiempo real. Muévete con las flechas del teclado o WASD. Acércate a alguien para hablar.',
+      title: '🌐 Tu oficina virtual',
+      description: 'Muévete con WASD o flechas. Al acercarte a un compañero se activa automáticamente audio y video, como en una oficina real.',
       side: 'bottom',
       align: 'center',
     },
@@ -30,8 +30,8 @@ const PASOS_GENERALES: DriveStep[] = [
   {
     element: '[data-tour-step="sidebar-nav"]',
     popover: {
-      title: '📍 Navegación',
-      description: 'Accede a las diferentes secciones: espacio virtual, chat, tareas y grabaciones.',
+      title: '📍 Navegación rápida',
+      description: 'Cambia entre el espacio 3D, chat, tareas, grabaciones y más sin perder la conexión de audio.',
       side: 'right',
       align: 'start',
     },
@@ -39,8 +39,8 @@ const PASOS_GENERALES: DriveStep[] = [
   {
     element: '[data-tour-step="mic-btn"]',
     popover: {
-      title: '🎤 Micrófono',
-      description: 'Activa o silencia tu micrófono. El audio es espacial: se escucha más fuerte cuando estás cerca de alguien.',
+      title: '🎤 Audio espacial',
+      description: 'Tu voz se escucha más fuerte cuanto más cerca estés. Haz clic para silenciar/activar. Mantén pulsado para push-to-talk.',
       side: 'top',
       align: 'center',
     },
@@ -48,8 +48,8 @@ const PASOS_GENERALES: DriveStep[] = [
   {
     element: '[data-tour-step="cam-btn"]',
     popover: {
-      title: '📷 Cámara',
-      description: 'Activa tu cámara para que tu equipo te vea. Puedes configurar efectos de fondo desde el menú.',
+      title: '📷 Cámara con efectos',
+      description: 'Activa tu cámara. Haz clic en la flecha para elegir blur, fondo virtual o imagen personalizada.',
       side: 'top',
       align: 'center',
     },
@@ -57,8 +57,8 @@ const PASOS_GENERALES: DriveStep[] = [
   {
     element: '[data-tour-step="chat-btn"]',
     popover: {
-      title: '💬 Chat',
-      description: 'Envía mensajes a tu equipo. Los mensajes también aparecen como burbujas sobre los avatares.',
+      title: '💬 Chat rápido',
+      description: 'Escribe un mensaje que aparece como burbuja sobre tu avatar. También puedes usar emojis con las teclas 1-8.',
       side: 'top',
       align: 'center',
     },
@@ -66,8 +66,8 @@ const PASOS_GENERALES: DriveStep[] = [
   {
     element: '[data-tour-step="recording-btn"]',
     popover: {
-      title: '🔴 Grabar reunión',
-      description: 'Graba reuniones para obtener análisis conductual automático con inteligencia artificial.',
+      title: '🔴 Grabación inteligente',
+      description: 'Graba reuniones y obtén transcripción automática, análisis de emociones y resumen AI al terminar.',
       side: 'top',
       align: 'center',
     },
@@ -75,8 +75,8 @@ const PASOS_GENERALES: DriveStep[] = [
   {
     element: '[data-tour-step="sidebar-chat"]',
     popover: {
-      title: '📨 Mensajes',
-      description: 'Panel de conversaciones. Chats directos y grupales con tu equipo.',
+      title: '📨 Conversaciones',
+      description: 'Chats directos y canales de equipo. Los mensajes se sincronizan en tiempo real.',
       side: 'right',
       align: 'center',
     },
@@ -84,8 +84,8 @@ const PASOS_GENERALES: DriveStep[] = [
   {
     element: '[data-tour-step="settings-btn"]',
     popover: {
-      title: '⚙️ Configuración',
-      description: 'Personaliza audio, video, espacio 3D, notificaciones, privacidad y mucho más.',
+      title: '⚙️ Personaliza todo',
+      description: 'Audio, video, velocidad de movimiento, radio de proximidad, notificaciones, privacidad y rendimiento.',
       side: 'right',
       align: 'end',
     },
@@ -93,8 +93,8 @@ const PASOS_GENERALES: DriveStep[] = [
   {
     element: '[data-tour-step="avatar-area"]',
     popover: {
-      title: '🧍 Tu Avatar',
-      description: 'Este eres t\u00FA en el espacio virtual. Haz doble clic en cualquier lugar del espacio para mover tu avatar autom\u00E1ticamente hasta ese punto.',
+      title: '🧍 Interacciones',
+      description: 'Haz clic en otro avatar para ver su perfil, ir hacia él, invitarlo o seguirlo. Doble clic en el suelo para teletransportarte.',
       side: 'bottom',
       align: 'center',
     },
@@ -103,7 +103,7 @@ const PASOS_GENERALES: DriveStep[] = [
     element: '[data-tour-step="viben-btn"]',
     popover: {
       title: '🤖 Mónica AI',
-      description: 'Tu asistente de inteligencia artificial. Pregúntale lo que necesites sobre el espacio.',
+      description: 'Tu asistente IA. Puede ayudarte con tareas, resumir reuniones y responder preguntas sobre el espacio.',
       side: 'bottom',
       align: 'end',
     },

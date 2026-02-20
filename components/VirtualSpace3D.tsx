@@ -3691,24 +3691,56 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
   const [incomingWave, setIncomingWave] = useState<{ from: string; fromName: string } | null>(null);
   const lastInteractionRef = useRef<Map<string, number>>(new Map()); // Dedup wave/nudge/invite dual-channel
   
+  // Coordenadas estabilizadas para cálculo de proximidad — evita recálculos en cada pixel de movimiento
+  // Solo se actualiza cuando el usuario se mueve más de 8px (medio tile), reduciendo re-renders masivos
+  const PROXIMITY_COORD_THRESHOLD = 8;
+  const [stableProximityCoords, setStableProximityCoords] = useState({ x: currentUserEcs.x, y: currentUserEcs.y });
+  const stableProximityCoordsRef = useRef({ x: currentUserEcs.x, y: currentUserEcs.y });
+  useEffect(() => {
+    const dx = currentUserEcs.x - stableProximityCoordsRef.current.x;
+    const dy = currentUserEcs.y - stableProximityCoordsRef.current.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist >= PROXIMITY_COORD_THRESHOLD) {
+      stableProximityCoordsRef.current = { x: currentUserEcs.x, y: currentUserEcs.y };
+      setStableProximityCoords({ x: currentUserEcs.x, y: currentUserEcs.y });
+    }
+  }, [currentUserEcs.x, currentUserEcs.y]);
+
   // Ref para tracking de histéresis (evitar parpadeo en el límite de proximidad)
   const connectedUsersRef = useRef<Set<string>>(new Set());
+
+  // === ESTADOS DE PRIVACIDAD DE PROXIMIDAD (patrón Gather) — declarados antes de usersInCall ===
+  const [conversacionBloqueada, setConversacionBloqueada] = useState(false);
+  const [conversacionesBloqueadasRemoto, setConversacionesBloqueadasRemoto] = useState<Map<string, string[]>>(new Map());
+  const [proximidadNotificada, setProximidadNotificada] = useState(false);
+  const proximidadNotificadaRef = useRef(false);
 
   // Detectar usuarios en proximidad (excluyendo al usuario actual)
   const usersInCall = useMemo(() => {
     const nextConnectedUsers = new Set<string>();
+
+    // Construir set de IDs bloqueados por conversaciones remotas
+    const idsBloqueadosProximidad = new Set<string>();
+    conversacionesBloqueadasRemoto.forEach((participants, lockerId) => {
+      if (!session?.user?.id || participants.includes(session.user.id)) return;
+      participants.forEach(pid => idsBloqueadosProximidad.add(pid));
+      idsBloqueadosProximidad.add(lockerId);
+    });
     
     const users = usuariosEnChunks.filter(u => {
       // Excluir al usuario actual
       if (u.id === session?.user?.id) return false;
       if (u.esFantasma) return false;
+
+      // Bloquear entrada si el usuario pertenece a una conversación bloqueada
+      if (idsBloqueadosProximidad.has(u.id)) return false;
       
       // Validar coordenadas (ignorar 0,0 que suele ser inicialización)
-      if ((u.x === 0 && u.y === 0) || typeof u.x !== 'number' || typeof u.y !== 'number' || typeof currentUserEcs.x !== 'number' || typeof currentUserEcs.y !== 'number') {
+      if ((u.x === 0 && u.y === 0) || typeof u.x !== 'number' || typeof u.y !== 'number' || typeof stableProximityCoords.x !== 'number' || typeof stableProximityCoords.y !== 'number') {
         return false;
       }
 
-      const dist = Math.sqrt(Math.pow(u.x - currentUserEcs.x, 2) + Math.pow(u.y - currentUserEcs.y, 2));
+      const dist = Math.sqrt(Math.pow(u.x - stableProximityCoords.x, 2) + Math.pow(u.y - stableProximityCoords.y, 2));
       
       const wasInCall = connectedUsersRef.current.has(u.id);
       
@@ -3745,7 +3777,7 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
     
     connectedUsersRef.current = nextConnectedUsers;
     return users;
-  }, [usuariosEnChunks, currentUserEcs.x, currentUserEcs.y, session?.user?.id, currentUser.isScreenSharing, userProximityRadius]);
+  }, [usuariosEnChunks, stableProximityCoords.x, stableProximityCoords.y, session?.user?.id, currentUser.isScreenSharing, userProximityRadius, conversacionesBloqueadasRemoto]);
 
   const hasActiveCall = usersInCall.length > 0;
   hasActiveCallRef.current = hasActiveCall;
@@ -3763,10 +3795,10 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
       if (u.esFantasma) return false;
       if (idsEnProximidad.has(u.id)) return false; // Ya están en usersInCall
       if ((u.x === 0 && u.y === 0) || typeof u.x !== 'number' || typeof u.y !== 'number') return false;
-      const dist = Math.sqrt(Math.pow(u.x - currentUserEcs.x, 2) + Math.pow(u.y - currentUserEcs.y, 2));
+      const dist = Math.sqrt(Math.pow(u.x - stableProximityCoords.x, 2) + Math.pow(u.y - stableProximityCoords.y, 2));
       return dist < audioRadius;
     });
-  }, [usuariosEnChunks, currentUserEcs.x, currentUserEcs.y, session?.user?.id, userProximityRadius, usersInCall]);
+  }, [usuariosEnChunks, stableProximityCoords.x, stableProximityCoords.y, session?.user?.id, userProximityRadius, usersInCall]);
   // Set de IDs en rango de audio espacial — cam bubbles SOLO para estos usuarios
   const usersInAudioRangeIds = useMemo(() => new Set(usersInAudioRange.map(u => u.id)), [usersInAudioRange]);
 
@@ -3849,11 +3881,7 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
     return next;
   }, [remoteScreenStreams, allowedVideoIds]);
 
-  // === ESTADOS DE PRIVACIDAD DE PROXIMIDAD (patrón Gather) ===
-  const [conversacionBloqueada, setConversacionBloqueada] = useState(false);
-  const [conversacionesBloqueadasRemoto, setConversacionesBloqueadasRemoto] = useState<Map<string, string[]>>(new Map());
-  const [proximidadNotificada, setProximidadNotificada] = useState(false);
-  const proximidadNotificadaRef = useRef(false);
+  // (Estados de privacidad movidos antes de usersInCall — ver línea ~3697)
 
   // === SUSCRIPCIÓN SELECTIVA — PATRÓN LIVEKIT BEST PRACTICE (setEnabled vs setSubscribed) ===
   // Docs: https://docs.livekit.io/transport/media/subscribe/#enabling-disabling-tracks
@@ -4180,7 +4208,7 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
     if (mensaje.type === 'reaction') {
       if (mensaje.payload.from === session.user.id) return;
       setRemoteReaction({ emoji: mensaje.payload.emoji, from: mensaje.payload.from, fromName: mensaje.payload.fromName });
-      setTimeout(() => setRemoteReaction(null), 3000);
+      setTimeout(() => setRemoteReaction(null), 2000);
       return;
     }
 
@@ -4683,10 +4711,10 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
     // Agregar nueva reacción al array
     setLocalReactions(prev => [...prev, { id: reactionId, emoji }]);
     
-    // Remover esta reacción específica después de 2s
+    // Remover esta reacción específica después de 1.5s (más snappy)
     setTimeout(() => {
       setLocalReactions(prev => prev.filter(r => r.id !== reactionId));
-    }, 2000);
+    }, 1500);
     
     // Enviar reacción a otros usuarios por el canal WebRTC
     if (!enviarDataLivekit({ type: 'reaction', payload: { emoji, from: session.user.id, fromName: currentUser.name } })) {
@@ -5584,7 +5612,18 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
             moveTarget={moveTarget}
             onReachTarget={() => setMoveTarget(null)}
             teleportTarget={teleportTarget}
-            onTeleportDone={() => setTeleportTarget(null)}
+            onTeleportDone={() => {
+              setTeleportTarget(null);
+              // Forzar re-sincronización de tracks LiveKit tras teleport
+              // El teleport mueve al usuario lejos → sale de proximidad → tracks se despublican
+              // Al llegar al destino, necesitamos re-publicar inmediatamente
+              if (USAR_LIVEKIT && livekitConnected) {
+                setTimeout(() => {
+                  sincronizarTracksLocales().catch(() => {});
+                  console.log('[LIVEKIT] Re-sincronizando tracks tras teleport');
+                }, 800);
+              }
+            }}
             showFloorGrid={space3dSettings.showFloorGrid}
             showNamesAboveAvatars={space3dSettings.showNamesAboveAvatars}
             cameraSensitivity={space3dSettings.cameraSensitivity}

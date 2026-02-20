@@ -30,6 +30,8 @@ interface MeetingControlBarProps {
   onStopRecording?: () => void;
   showRecordingButton?: boolean;
   remoteRecordingBy?: string | null;
+  // Navegación
+  onGoToVirtualSpace?: () => void;
 }
 
 // Configuración de tipos de reunión para mostrar badge
@@ -52,6 +54,7 @@ export const MeetingControlBar: React.FC<MeetingControlBarProps> = ({
   onStopRecording,
   showRecordingButton = true,
   remoteRecordingBy = null,
+  onGoToVirtualSpace,
 }) => {
   const room = useRoomContext();
   const { localParticipant } = useLocalParticipant();
@@ -66,7 +69,7 @@ export const MeetingControlBar: React.FC<MeetingControlBarProps> = ({
   // Emojis para reacciones
   const emojis = ['👍', '🔥', '❤️', '👏', '😂', '😮', '🚀', '✨'];
 
-  // Sincronizar estados con LiveKit
+  // Sincronizar estados con LiveKit (incluye re-sync al conectar)
   useEffect(() => {
     if (localParticipant) {
       setIsMicEnabled(localParticipant.isMicrophoneEnabled);
@@ -75,43 +78,66 @@ export const MeetingControlBar: React.FC<MeetingControlBarProps> = ({
     }
   }, [localParticipant]);
 
-  // Escuchar cambios de tracks
+  // Escuchar cambios de tracks + re-sync al conectar (fix: botones desincronizados)
   useEffect(() => {
     if (!room) return;
 
-    const handleTrackMuted = () => {
+    const syncState = () => {
       if (localParticipant) {
         setIsMicEnabled(localParticipant.isMicrophoneEnabled);
         setIsCameraEnabled(localParticipant.isCameraEnabled);
+        setIsScreenSharing(localParticipant.isScreenShareEnabled);
       }
     };
 
-    room.on(RoomEvent.TrackMuted, handleTrackMuted);
-    room.on(RoomEvent.TrackUnmuted, handleTrackMuted);
-    room.on(RoomEvent.LocalTrackPublished, handleTrackMuted);
-    room.on(RoomEvent.LocalTrackUnpublished, handleTrackMuted);
+    room.on(RoomEvent.TrackMuted, syncState);
+    room.on(RoomEvent.TrackUnmuted, syncState);
+    room.on(RoomEvent.LocalTrackPublished, syncState);
+    room.on(RoomEvent.LocalTrackUnpublished, syncState);
+    room.on(RoomEvent.Connected, syncState);
+
+    // Re-sync después de 1s para capturar tracks que se publican con delay
+    const delaySync = setTimeout(syncState, 1000);
 
     return () => {
-      room.off(RoomEvent.TrackMuted, handleTrackMuted);
-      room.off(RoomEvent.TrackUnmuted, handleTrackMuted);
-      room.off(RoomEvent.LocalTrackPublished, handleTrackMuted);
-      room.off(RoomEvent.LocalTrackUnpublished, handleTrackMuted);
+      room.off(RoomEvent.TrackMuted, syncState);
+      room.off(RoomEvent.TrackUnmuted, syncState);
+      room.off(RoomEvent.LocalTrackPublished, syncState);
+      room.off(RoomEvent.LocalTrackUnpublished, syncState);
+      room.off(RoomEvent.Connected, syncState);
+      clearTimeout(delaySync);
     };
   }, [room, localParticipant]);
 
   // Toggle micrófono
   const toggleMic = useCallback(async () => {
-    if (localParticipant) {
+    if (!localParticipant) {
+      console.warn('[MeetingControlBar] localParticipant no disponible para toggleMic');
+      return;
+    }
+    try {
       await localParticipant.setMicrophoneEnabled(!isMicEnabled);
       setIsMicEnabled(!isMicEnabled);
+    } catch (err) {
+      console.error('[MeetingControlBar] Error toggling mic:', err);
+      // Re-sync estado real
+      setIsMicEnabled(localParticipant.isMicrophoneEnabled);
     }
   }, [localParticipant, isMicEnabled]);
 
   // Toggle cámara
   const toggleCamera = useCallback(async () => {
-    if (localParticipant) {
+    if (!localParticipant) {
+      console.warn('[MeetingControlBar] localParticipant no disponible para toggleCamera');
+      return;
+    }
+    try {
       await localParticipant.setCameraEnabled(!isCameraEnabled);
       setIsCameraEnabled(!isCameraEnabled);
+    } catch (err) {
+      console.error('[MeetingControlBar] Error toggling camera:', err);
+      // Re-sync estado real
+      setIsCameraEnabled(localParticipant.isCameraEnabled);
     }
   }, [localParticipant, isCameraEnabled]);
 
@@ -157,7 +183,7 @@ export const MeetingControlBar: React.FC<MeetingControlBarProps> = ({
   return (
     <>
       {/* Barra de controles - Glassmorphism 2026 */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[200] flex items-end gap-2">
+      <div className="absolute bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 z-[200] flex items-end gap-1.5 md:gap-2 max-w-[95vw]">
         {/* Badge de tipo de reunión */}
         <div className={`px-3 py-1.5 rounded-full bg-gradient-to-r ${tipoConfig.color} text-white text-xs font-medium flex items-center gap-1.5 shadow-lg`}>
           <span>{tipoConfig.icon}</span>
@@ -327,6 +353,19 @@ export const MeetingControlBar: React.FC<MeetingControlBarProps> = ({
           )}
 
           <div className="w-px h-6 bg-white/10 mx-0.5"></div>
+
+          {/* Botón Ir al Espacio Virtual */}
+          {onGoToVirtualSpace && (
+            <button
+              onClick={onGoToVirtualSpace}
+              className="w-10 h-10 rounded-xl bg-transparent text-white/70 hover:bg-indigo-500/20 hover:text-indigo-400 flex items-center justify-center transition-all duration-300"
+              title="Ir al espacio virtual"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              </svg>
+            </button>
+          )}
 
           {/* Botón Salir */}
           <button

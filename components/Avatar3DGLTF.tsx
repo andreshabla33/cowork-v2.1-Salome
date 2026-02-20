@@ -165,22 +165,75 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
 
   // Auto-corrección de escala y posición Y (dinámico para cualquier modelo)
   const { modelScaleCorrection, modelYOffset } = useMemo(() => {
-    const worldBox = new THREE.Box3().setFromObject(clone);
-    if (worldBox.isEmpty()) return { modelScaleCorrection: 1, modelYOffset: 0 };
+    // Estrategia multi-nivel para calcular bounding box correctamente:
+    // 1) Montar temporalmente en una escena auxiliar para que updateWorldMatrix funcione
+    // 2) Calcular desde geometrías con matrices actualizadas
+    // 3) Fallback a setFromObject
+    // 4) Clamp de seguridad para evitar escalas absurdas
+    
+    const tempScene = new THREE.Scene();
+    tempScene.add(clone);
+    clone.updateWorldMatrix(true, true);
+    
+    // Método 1: Calcular desde geometrías individuales (más confiable para SkinnedMesh)
+    const geoBox = new THREE.Box3();
+    let hasGeometry = false;
+    clone.traverse((child: any) => {
+      if ((child.isMesh || child.isSkinnedMesh) && child.geometry) {
+        child.geometry.computeBoundingBox();
+        const bb = child.geometry.boundingBox;
+        if (bb && !bb.isEmpty()) {
+          const transformed = bb.clone();
+          transformed.applyMatrix4(child.matrixWorld);
+          geoBox.union(transformed);
+          hasGeometry = true;
+        }
+      }
+    });
 
-    const worldSize = worldBox.getSize(new THREE.Vector3());
+    // Método 2: Fallback a setFromObject
+    if (!hasGeometry || geoBox.isEmpty()) {
+      geoBox.setFromObject(clone);
+    }
+
+    // Método 3: Si aún falla, calcular desde posiciones de huesos (bind pose)
+    if (geoBox.isEmpty() || geoBox.getSize(new THREE.Vector3()).y < 0.1) {
+      const boneBox = new THREE.Box3();
+      clone.traverse((child: any) => {
+        if (child.isBone) {
+          const worldPos = new THREE.Vector3();
+          child.getWorldPosition(worldPos);
+          boneBox.expandByPoint(worldPos);
+        }
+      });
+      if (!boneBox.isEmpty() && boneBox.getSize(new THREE.Vector3()).y > geoBox.getSize(new THREE.Vector3()).y) {
+        geoBox.copy(boneBox);
+      }
+    }
+
+    // Quitar de la escena temporal
+    tempScene.remove(clone);
+
+    if (geoBox.isEmpty()) return { modelScaleCorrection: 1, modelYOffset: 0 };
+
+    const worldSize = geoBox.getSize(new THREE.Vector3());
     const TARGET_HEIGHT = 1.7;
 
     // Escala: normalizar modelos fuera de rango razonable (0.5 - 3.0)
     let scaleCorrection = 1;
-    if (worldSize.y > 0 && (worldSize.y < 0.5 || worldSize.y > 3.0)) {
-      scaleCorrection = TARGET_HEIGHT / worldSize.y;
+    const effectiveHeight = Math.max(worldSize.y, 0.01);
+    if (effectiveHeight < 0.5 || effectiveHeight > 3.0) {
+      scaleCorrection = TARGET_HEIGHT / effectiveHeight;
     }
 
-    // Posición Y: siempre ajustar para que la base del modelo esté en Y=0
-    const yOffset = -worldBox.min.y;
+    // Clamp de seguridad: escala nunca mayor a 10x ni menor a 0.1x
+    scaleCorrection = Math.max(0.1, Math.min(scaleCorrection, 10));
 
-    console.log(`📐 ${avatarConfig?.nombre || 'avatar'}: h=${worldSize.y.toFixed(2)} scale=${scaleCorrection.toFixed(2)} yOff=${yOffset.toFixed(2)}`);
+    // Posición Y: ajustar para que la base del modelo esté en Y=0
+    // No multiplicar por scaleCorrection aquí — el render ya multiplica por avatarScale
+    const yOffset = -geoBox.min.y;
+
+    console.log(`📐 ${avatarConfig?.nombre || 'avatar'}: h=${effectiveHeight.toFixed(2)} scale=${scaleCorrection.toFixed(2)} yOff=${yOffset.toFixed(2)}`);
     return { modelScaleCorrection: scaleCorrection, modelYOffset: yOffset };
   }, [clone]);
 

@@ -69,14 +69,32 @@ export const OnboardingCreador: React.FC<OnboardingCreadorProps> = ({
   });
 
   const handleSelectCargo = async (cargo: CargoLaboral) => {
-    if (!miembroId) return;
     setLoading(true);
     setError(null);
     try {
+      // Resolver miembroId si no existe (fix: cargo se queda cargando cuando miembroId es null)
+      let targetMiembroId = miembroId;
+      if (!targetMiembroId && espacioCreado) {
+        const { data: miembroData } = await supabase
+          .from('miembros_espacio')
+          .select('id')
+          .eq('espacio_id', espacioCreado.id)
+          .eq('usuario_id', userId)
+          .maybeSingle();
+        if (miembroData?.id) {
+          targetMiembroId = miembroData.id;
+          setMiembroId(miembroData.id);
+        }
+      }
+
+      if (!targetMiembroId) {
+        throw new Error('No se encontró tu membresía. Intenta recargar la página.');
+      }
+
       const { error: updateError } = await supabase
         .from('miembros_espacio')
         .update({ cargo_id: cargo })
-        .eq('id', miembroId);
+        .eq('id', targetMiembroId);
       if (updateError) throw updateError;
       await fetchWorkspaces();
       setCargoSeleccionado(cargo);
@@ -124,9 +142,27 @@ export const OnboardingCreador: React.FC<OnboardingCreadorProps> = ({
   };
 
   const finalizarOnboarding = async () => {
-    await completarOnboarding();
+    try {
+      await completarOnboarding();
+    } catch (err) {
+      console.warn('⚠️ Onboarding: Error en completarOnboarding (continuando):', err);
+    }
     setPaso('completado');
-    setTimeout(onComplete, 2000);
+    // Timeout de seguridad: si onComplete tarda más de 8s, forzar redirección
+    const safeTimeout = setTimeout(() => {
+      console.warn('⚠️ Onboarding: onComplete tardó demasiado, forzando redirección');
+      onComplete();
+    }, 8000);
+    setTimeout(async () => {
+      try {
+        await onComplete();
+      } catch (err) {
+        console.error('❌ Error en onComplete:', err);
+        onComplete(); // Forzar redirección aunque falle
+      } finally {
+        clearTimeout(safeTimeout);
+      }
+    }, 2000);
   };
 
   const handleGuardarEmpresa = async () => {

@@ -365,8 +365,22 @@ export const RecordingManager: React.FC<RecordingManagerProps> = ({
       // Detener análisis combinado
       combinedAnalysis.stopAnalysis();
 
+      // Forzar último dataavailable antes de stop (fix: chunks vacíos)
+      try {
+        if (mediaRecorderRef.current.state === 'recording') {
+          mediaRecorderRef.current.requestData();
+        }
+      } catch (e) {
+        console.warn('⚠️ requestData falló (normal si ya se detuvo):', e);
+      }
+
+      // Esperar un tick para que el último chunk se procese antes de stop
+      await new Promise(resolve => setTimeout(resolve, 200));
+
       // Detener MediaRecorder (dispara processRecording via onstop)
-      mediaRecorderRef.current.stop();
+      if (mediaRecorderRef.current && (mediaRecorderRef.current.state === 'recording' || mediaRecorderRef.current.state === 'paused')) {
+        mediaRecorderRef.current.stop();
+      }
       onRecordingStateChange?.(false);
 
       console.log('⏹️ Grabación detenida');
@@ -547,7 +561,13 @@ export const RecordingManager: React.FC<RecordingManagerProps> = ({
         
         if (accessToken) {
           console.log('🤖 Llamando a generar-resumen-ai...');
-          // Usar Promise.race con timeout de 30 segundos
+          // Muestrear emociones uniformemente (máx 100 frames distribuidos en toda la grabación)
+          const maxEmotionFrames = 100;
+          const sampledEmotions = emotionFrames.length <= maxEmotionFrames
+            ? emotionFrames
+            : emotionFrames.filter((_, i) => i % Math.ceil(emotionFrames.length / maxEmotionFrames) === 0);
+          
+          // Usar Promise.race con timeout de 60 segundos (reuniones largas necesitan más)
           const aiPromise = supabase.functions.invoke('generar-resumen-ai', {
             headers: { Authorization: `Bearer ${accessToken}` },
             body: {
@@ -555,7 +575,7 @@ export const RecordingManager: React.FC<RecordingManagerProps> = ({
               espacio_id: espacioId,
               creador_id: userId,
               transcripcion: transcript,
-              emociones: emotionFrames.slice(-50),
+              emociones: sampledEmotions,
               duracion_segundos: duration,
               participantes: [userName],
               reunion_titulo: reunionTitulo,
@@ -564,12 +584,13 @@ export const RecordingManager: React.FC<RecordingManagerProps> = ({
                 engagement_promedio: avgEngagement,
                 microexpresiones_detectadas: resultadoAnalisis.microexpresiones.length,
                 tipo_analisis: tipoGrabacion,
+                total_emotion_frames: emotionFrames.length,
               },
             },
           });
           
           const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Timeout')), 30000)
+            setTimeout(() => reject(new Error('Timeout')), 60000)
           );
           
           try {

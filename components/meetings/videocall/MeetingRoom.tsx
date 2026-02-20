@@ -858,7 +858,7 @@ const MeetingRoomContent: React.FC<MeetingRoomContentProps> = ({
       </div>
 
       {/* Grid de participantes con nuevo layout */}
-      <div className={`h-full w-full ${showChat ? 'pr-80' : ''} transition-all duration-300 pb-20`}>
+      <div className={`h-full w-full ${showChat ? 'md:pr-80 pr-0' : ''} transition-all duration-300 pb-20 md:pb-20`}>
         {screenShareTrack ? (
           // Layout con screen share
           <div className="h-full w-full flex flex-col lg:flex-row gap-2 p-2">
@@ -945,7 +945,7 @@ const MeetingRoomContent: React.FC<MeetingRoomContentProps> = ({
 
       {/* Panel de Chat - Estilos mejorados (oculto si invitado externo sin permiso) */}
       {showChat && !(isExternalGuest && !guestPermissions.allowChat) && (
-        <div className="absolute top-0 right-0 bottom-0 w-80 bg-zinc-900/98 backdrop-blur-xl border-l border-white/10 flex flex-col z-[100]">
+        <div className="absolute top-0 right-0 bottom-0 w-full md:w-80 bg-zinc-900/98 backdrop-blur-xl border-l border-white/10 flex flex-col z-[100]">
           <div className="p-4 border-b border-white/10 flex items-center justify-between shrink-0">
             <h3 className="text-white font-bold text-sm">Chat de la reunión</h3>
             <button 
@@ -1063,6 +1063,7 @@ const MeetingRoomContent: React.FC<MeetingRoomContentProps> = ({
         onStopRecording={handleToggleRecording}
         showRecordingButton={isHost || !isExternalGuest}
         remoteRecordingBy={!isRecording && remoteRecording?.isRecording ? remoteRecording.by : null}
+        onGoToVirtualSpace={!isExternalGuest ? onLeave : undefined}
       />
 
       {/* RecordingManager con análisis conductual - headless mode (UI via MeetingControlBar) */}
