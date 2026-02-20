@@ -226,13 +226,32 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
     // Estrategia: calcular la escala acumulada del nodo raíz y multiplicar por el bbox de geometría.
 
     // 1) Obtener escala acumulada del árbol de nodos (Armature suele tener scale=100)
+    // Calcular producto de escalas en la cadena padre→hijo (no solo el máximo)
     let rootScale = 1;
     clone.traverse((child: any) => {
       if (child.scale && child !== clone) {
         const s = Math.max(child.scale.x, child.scale.y, child.scale.z);
-        if (s > rootScale) rootScale = s;
+        if (s !== 1 && s > 0) {
+          rootScale *= s;
+        }
       }
     });
+    // Debug: mostrar estructura de nodos con escala
+    if (rootScale === 1) {
+      // Si no encontramos escala en nodos, intentar desde matrixWorld
+      const tempScene = new THREE.Scene();
+      tempScene.add(clone);
+      clone.updateWorldMatrix(true, true);
+      clone.traverse((child: any) => {
+        if ((child.isMesh || child.isSkinnedMesh) && child.matrixWorld) {
+          const worldScale = new THREE.Vector3();
+          child.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), worldScale);
+          const s = Math.max(worldScale.x, worldScale.y, worldScale.z);
+          if (s > rootScale) rootScale = s;
+        }
+      });
+      tempScene.remove(clone);
+    }
 
     // 2) Calcular bounding box desde geometrías (sin matrixWorld, que puede no estar actualizada)
     const geoBox = new THREE.Box3();
@@ -268,7 +287,7 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
     const TARGET_HEIGHT = 1.7;
 
     let scaleCorrection = 1;
-    if (effectiveHeight < 0.5 || effectiveHeight > 3.0) {
+    if (effectiveHeight < 1.2 || effectiveHeight > 2.5) {
       scaleCorrection = TARGET_HEIGHT / effectiveHeight;
     }
 
