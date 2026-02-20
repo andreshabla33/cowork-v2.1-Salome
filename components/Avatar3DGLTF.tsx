@@ -254,22 +254,35 @@ export const GLTFAvatar: React.FC<GLTFAvatarProps> = ({
     const loadAnimations = async () => {
       let animaciones = avatarConfig?.animaciones;
 
-      // Si no hay avatarId, no intentar cargar animaciones de otro avatar
-      // (cada avatar tiene su propio esqueleto, cargar anims de otro causa mismatch)
-      if (!avatarId) {
-        console.log('🎬 Avatar sin ID, usando animaciones embebidas del GLB si las tiene');
-        return;
-      }
-
-      // Si el config no trae animaciones, cargarlas directamente de BD
+      // Si el config no trae animaciones, cargarlas de BD
       if (!animaciones || animaciones.length === 0) {
-        console.warn('🎬 Config sin animaciones, cargando de BD para', avatarConfig?.nombre || 'avatar remoto');
-        const { data: anims } = await supabase
-          .from('avatar_animaciones')
-          .select('id, nombre, url, loop, orden, strip_root_motion')
-          .eq('avatar_id', avatarId)
-          .eq('activo', true)
-          .order('orden', { ascending: true });
+        let anims: any[] | null = null;
+
+        // 1) Buscar animaciones propias del avatar
+        if (avatarId) {
+          const { data } = await supabase
+            .from('avatar_animaciones')
+            .select('id, nombre, url, loop, orden, strip_root_motion')
+            .eq('avatar_id', avatarId)
+            .eq('activo', true)
+            .order('orden', { ascending: true });
+          anims = data;
+        }
+
+        // 2) Fallback: si no tiene propias, buscar animaciones del primer avatar que tenga (genéricas)
+        if (!anims || anims.length === 0) {
+          console.log('🎬 Sin animaciones propias, buscando fallback genérico para', avatarConfig?.nombre || 'avatar');
+          const { data: fallbackAnims } = await supabase
+            .from('avatar_animaciones')
+            .select('id, nombre, url, loop, orden, strip_root_motion')
+            .eq('activo', true)
+            .order('orden', { ascending: true });
+          // Tomar solo las del primer avatar_id encontrado (set coherente)
+          if (fallbackAnims && fallbackAnims.length > 0) {
+            const firstAvatarId = (fallbackAnims[0] as any).avatar_id;
+            anims = fallbackAnims.filter((a: any) => a.avatar_id === firstAvatarId);
+          }
+        }
 
         if (!anims || anims.length === 0) return;
         animaciones = anims.map((a: any) => ({
