@@ -389,7 +389,7 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
           console.log('🎬 Sin animaciones propias, buscando fallback genérico para', avatarConfig?.nombre || 'avatar');
           const { data: fallbackAnims } = await supabase
             .from('avatar_animaciones')
-            .select('id, nombre, url, loop, orden, strip_root_motion')
+            .select('id, avatar_id, nombre, url, loop, orden, strip_root_motion')
             .eq('activo', true)
             .order('orden', { ascending: true });
           // Tomar solo las del primer avatar_id encontrado (set coherente)
@@ -493,6 +493,15 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
       };
       const usedStates = new Set<string>();
       console.log(`🎬 GLB all-in-one: ${baseAnimations.length} animaciones embebidas:`, baseAnimations.map(c => c.name).join(', '));
+
+      // Pre-scan: detectar si algún clip tiene nombre explícito que mapea a 'idle'
+      // para NO asignar idle al primer clip desconocido (ej: Armature|clip0|baselayer = T-pose)
+      const hasExplicitIdle = baseAnimations.some(c => {
+        const n = c.name.toLowerCase().trim();
+        if (EMBEDDED_NAME_MAP[n] === 'idle') return true;
+        return Object.entries(EMBEDDED_NAME_MAP).some(([p, s]) => s === 'idle' && n.includes(p));
+      });
+
       baseAnimations.forEach((baseClip, idx) => {
         const clipNameLower = baseClip.name.toLowerCase().trim();
         const stripRoot = clipNameLower.includes('walk') || clipNameLower.includes('run') || clipNameLower.includes('jog');
@@ -507,8 +516,8 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
             }
           }
         }
-        // Fallback: primer clip sin nombre reconocido → idle
-        if (!mappedName && idx === 0 && !usedStates.has('idle')) mappedName = 'idle';
+        // Fallback: primer clip sin nombre reconocido → idle, SOLO si no hay un clip explícito idle
+        if (!mappedName && idx === 0 && !usedStates.has('idle') && !hasExplicitIdle) mappedName = 'idle';
         if (!mappedName) mappedName = baseClip.name; // conservar nombre original si no mapea
         if (usedStates.has(mappedName)) return; // evitar duplicados del mismo estado
         usedStates.add(mappedName);
