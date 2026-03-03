@@ -32,19 +32,11 @@ export const aplicarInteresEmpresa = (
   if (!empresaIdActual) return usuarios;
 
   return usuarios.map((usuario) => {
+    // Misma empresa (o sin empresa, o admin): SIEMPRE visible, sin importar departamento.
+    // Estándar industria (Gather, Kumospace, SpatialChat): todos los miembros de la misma
+    // organización se ven entre sí. La separación por departamentos se hace mediante
+    // zonas físicas en el espacio 3D, no ocultando usuarios.
     if (esAdmin || !usuario.empresa_id || usuario.empresa_id === empresaIdActual) {
-      if (departamentoIdActual && usuario.departamento_id && usuario.departamento_id !== departamentoIdActual && !esAdmin) {
-        return {
-          ...usuario,
-          name: usuario.name || 'Miembro de otro equipo',
-          isMicOn: false,
-          isCameraOn: false,
-          isScreenSharing: false,
-          isPrivate: true,
-          esFantasma: true,
-        };
-      }
-
       return { ...usuario, esFantasma: false };
     }
 
