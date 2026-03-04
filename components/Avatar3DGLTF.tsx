@@ -433,9 +433,10 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
     const avatarId = avatarConfig?.id || null;
     const boneCount = boneNames.size;
 
-    // Si no hay configs de BD, nada que cargar
+    // Si no hay configs de BD, nada que cargar.
+    // NO limpiar loadedAnimClips aquí — dejar que persistan hasta que nuevos clips
+    // los reemplacen atómicamente. Limpiar causa flash 6→0→6 → T-pose transitorio.
     if (!animConfigs || animConfigs.length === 0) {
-      if (loadedAnimClips.length > 0) setLoadedAnimClips([]);
       return;
     }
 
@@ -566,54 +567,62 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
     return anims;
   }, [baseAnimations, loadedAnimClips, boneNames, spineChainMap]);
   
-  // ============== MIXER + ACTIONS (combinados en un solo useEffect) ==============
-  // Best practice de pmndrs/drei #1175: mixer y actions DEBEN estar en el mismo
-  // useEffect para evitar race conditions entre efectos separados.
-  // Cuando clone O allAnimations cambian, se recrea mixer + actions atómicamente.
+  // ============== MIXER + ACTIONS ==============
+  // Mixer se crea/destruye SOLO cuando clone cambia (modelo diferente).
+  // Actions se recrean cuando allAnimations cambia (nuevos clips disponibles).
+  // Separados con ref-guard para evitar recrear mixer innecesariamente
+  // (causa WebGL Context Lost por exceso de create/destroy).
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
   const actionsRef = useRef<Record<string, THREE.AnimationAction>>({});
   const clipVersionRef = useRef(0);
+  const mixerCloneRef = useRef<any>(null);
 
+  // Mixer: solo recrear cuando el modelo (clone) cambia
   useEffect(() => {
     const root = groupRef.current;
     if (!root) return;
-
-    // Siempre crear mixer fresco (garantiza bone bindings correctos al nuevo clone)
     const mixer = new THREE.AnimationMixer(root);
     mixerRef.current = mixer;
-
-    // Si hay animaciones, crear actions y arrancar idle
-    if (allAnimations.length > 0) {
-      const newActions: Record<string, THREE.AnimationAction> = {};
-      allAnimations.forEach(clip => {
-        newActions[clip.name] = mixer.clipAction(clip, root);
-      });
-      actionsRef.current = newActions;
-      clipVersionRef.current++;
-
-      if (newActions['idle']) {
-        newActions['idle'].reset().fadeIn(0.2).play();
-      }
-      setCurrentAnimation('idle');
-    } else {
-      actionsRef.current = {};
-    }
-
+    mixerCloneRef.current = clone;
     return () => {
       mixer.stopAllAction();
-      if (root) {
-        mixer.uncacheRoot(root);
-      }
+      if (root) mixer.uncacheRoot(root);
       mixerRef.current = null;
       actionsRef.current = {};
     };
-  }, [clone, allAnimations]);
+  }, [clone]);
+
+  // Actions: recrear cuando allAnimations cambia (BD cargó, o modelo cambió)
+  // Usa mixerRef del effect anterior — garantizado por orden de useEffect en React.
+  useEffect(() => {
+    const mixer = mixerRef.current;
+    const root = groupRef.current;
+    if (!mixer || !root || allAnimations.length === 0) return;
+
+    // Limpiar actions anteriores del mismo mixer
+    mixer.stopAllAction();
+    Object.values(actionsRef.current).forEach(a => {
+      try { mixer.uncacheAction(a.getClip(), root); } catch(_) {}
+    });
+
+    const newActions: Record<string, THREE.AnimationAction> = {};
+    allAnimations.forEach(clip => {
+      newActions[clip.name] = mixer.clipAction(clip, root);
+    });
+    actionsRef.current = newActions;
+    clipVersionRef.current++;
+
+    if (newActions['idle']) {
+      newActions['idle'].reset().fadeIn(0.2).play();
+    }
+    setCurrentAnimation('idle');
+  }, [allAnimations]);
 
   // Avanzar mixer cada frame + invalidar para frameloop="demand"
   useFrame((state, delta) => {
     if (mixerRef.current) {
       mixerRef.current.update(delta);
-      state.invalidate(); // Forzar siguiente frame mientras haya mixer activo
+      state.invalidate();
     }
   });
 
