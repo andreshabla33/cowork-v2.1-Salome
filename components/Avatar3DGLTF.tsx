@@ -15,6 +15,7 @@ export interface AnimationConfig {
   loop: boolean;
   orden: number;
   strip_root_motion?: boolean;
+  es_fallback?: boolean;
 }
 
 export interface Avatar3DConfig {
@@ -99,7 +100,8 @@ function remapAnimationTracks(
   clip: THREE.AnimationClip,
   boneNames: Set<string>,
   stripRootMotion = false,
-  spineOverrides?: Map<string, string>
+  spineOverrides?: Map<string, string>,
+  stripPositions = false
 ): THREE.AnimationClip {
   const remapped = clip.clone();
 
@@ -168,9 +170,12 @@ function remapAnimationTracks(
 
     // Strip .scale tracks: los exports de Meshy incluyen scale keyframes que difieren
     // del rest-pose del modelo, causando inflación de huesos (ej: cabeza como globo).
-    // NOTA: NO strip .position — las animaciones Meshy chibi usan position+quaternion
-    // juntos para compensar proporciones. Stripping positions deforma el personaje.
     if (property === '.scale') return false;
+
+    // Strip ALL .position tracks para animaciones cross-skeleton (fallback genérico).
+    // Las .position tracks codifican largos de huesos específicos del modelo original.
+    // Para cross-skeleton solo se usan .quaternion (rotaciones) que son transferibles.
+    if (stripPositions && property === '.position') return false;
 
     // Strip root motion: eliminar position tracks del Hips (root bone) para walk/run
     // Esto evita que el avatar "salte atrás" al reiniciar el loop
@@ -384,7 +389,8 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
           if (gltf.animations.length > 0) {
             const clip = gltf.animations[0];
             const stripRoot = anim.strip_root_motion || false;
-            const remapped = remapAnimationTracks(clip, boneNames, stripRoot, spineChainMap);
+            const isCrossSkeleton = anim.es_fallback || false;
+            const remapped = remapAnimationTracks(clip, boneNames, stripRoot, spineChainMap, isCrossSkeleton);
             const matchRate = (remapped as any)._matchRate ?? 0;
 
             if (matchRate >= 0.3 || clip.tracks.length === 0) {
@@ -840,6 +846,7 @@ export const useAvatar3D = (userId?: string) => {
             .order('orden', { ascending: true });
 
           // Fallback genérico: si no tiene anims propias, buscar de otro avatar Mixamo-compatible
+          let isFallback = false;
           if (!anims || anims.length === 0) {
             console.log(`⚠️ ${avatar.nombre}: sin anims propias, buscando fallback genérico...`);
             const { data: fallbackAnims } = await supabase
@@ -859,7 +866,8 @@ export const useAvatar3D = (userId?: string) => {
               for (const [, group] of byAvatar) {
                 if (group.length >= 3) {
                   anims = group;
-                  console.log(`✅ Fallback: usando ${group.length} anims de avatar ${group[0].avatar_id}`);
+                  isFallback = true;
+                  console.log(`✅ Fallback cross-skeleton: usando ${group.length} anims de avatar ${group[0].avatar_id}`);
                   break;
                 }
               }
@@ -879,6 +887,7 @@ export const useAvatar3D = (userId?: string) => {
               loop: a.loop ?? false,
               orden: a.orden ?? 0,
               strip_root_motion: a.strip_root_motion ?? false,
+              es_fallback: isFallback,
             })) || [],
           };
           setAvatarConfig(config);

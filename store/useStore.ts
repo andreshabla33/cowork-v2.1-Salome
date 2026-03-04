@@ -253,6 +253,7 @@ export const useStore = create<AppState>((set, get) => ({
                 .order('orden', { ascending: true });
 
               // Fallback genérico: si no tiene anims propias, buscar de otro avatar
+              let isFallback = false;
               if (!anims || anims.length === 0) {
                 const { data: fallbackAnims } = await supabase
                   .from('avatar_animaciones')
@@ -270,6 +271,7 @@ export const useStore = create<AppState>((set, get) => ({
                   for (const [, group] of byAvatar) {
                     if (group.length >= 3) {
                       anims = group;
+                      isFallback = true;
                       break;
                     }
                   }
@@ -286,6 +288,7 @@ export const useStore = create<AppState>((set, get) => ({
                   loop: a.loop ?? false,
                   orden: a.orden ?? 0,
                   strip_root_motion: a.strip_root_motion ?? false,
+                  es_fallback: isFallback,
                 })) || [],
               } as Avatar3DConfig;
             }
