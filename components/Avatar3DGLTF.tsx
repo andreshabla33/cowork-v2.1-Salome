@@ -426,29 +426,35 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
   const [loadedAnimClips, setLoadedAnimClips] = useState<THREE.AnimationClip[]>([]);
   const animConfigRef = useRef<AnimationConfig[] | null>(null);
   const currentAvatarIdRef = useRef<string | null>(null);
-  const boneCountRef = useRef<number>(0);
+  const boneHashRef = useRef<string>('');
 
   useEffect(() => {
     const animConfigs = avatarConfig?.animaciones;
     const avatarId = avatarConfig?.id || null;
     const boneCount = boneNames.size;
+    // Hash robusto: tamaño + nombre del primer hueso, suficiente para distinguir esqueletos
+    const firstBone = boneCount > 0 ? Array.from(boneNames)[0] : '';
+    const boneHash = `${boneCount}-${firstBone}`;
 
-    // Si no hay configs de BD, nada que cargar.
-    // NO limpiar loadedAnimClips aquí — dejar que persistan hasta que nuevos clips
-    // los reemplacen atómicamente. Limpiar causa flash 6→0→6 → T-pose transitorio.
-    if (!animConfigs || animConfigs.length === 0) {
-      return;
+    // Si el ID del avatar cambió, limpiar clips inmediatamente para no aplicar
+    // animaciones remapeadas para el esqueleto viejo en el nuevo avatar.
+    if (avatarId !== currentAvatarIdRef.current) {
+      if (currentAvatarIdRef.current !== null) {
+        setLoadedAnimClips([]);
+      }
+      currentAvatarIdRef.current = avatarId;
+      animConfigRef.current = null; // forzar recarga
+      boneHashRef.current = '';
     }
 
-    // No cargar si aún no tenemos huesos (modelo no cargado)
+    if (!animConfigs || animConfigs.length === 0) return;
     if (boneCount === 0) return;
 
-    // Evitar recarga si avatar, configs Y huesos son los mismos
-    // (boneCount cambia al cargar nuevo modelo → invalida caché → recarga con huesos correctos)
-    if (avatarId === currentAvatarIdRef.current && animConfigRef.current === animConfigs && boneCountRef.current === boneCount) return;
-    currentAvatarIdRef.current = avatarId;
+    // Evitar recarga si todo es exactamente igual
+    if (animConfigRef.current === animConfigs && boneHashRef.current === boneHash) return;
+    
     animConfigRef.current = animConfigs;
-    boneCountRef.current = boneCount;
+    boneHashRef.current = boneHash;
 
     const loader = new GLTFLoader();
     let cancelled = false;
@@ -554,11 +560,24 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
 
     // --- Paso 2: Complementar con animaciones de BD (estados no cubiertos por embebidas) ---
     if (loadedAnimClips.length > 0) {
+      // Validar que los clips cargados sean compatibles con el esqueleto actual
+      // (Previene aplicar clips del avatar A al avatar B durante re-renders transitorios)
+      const isClipCompatible = (clip: THREE.AnimationClip) => {
+        if (clip.tracks.length === 0) return false;
+        // Tomar el primer track que tenga un nombre de hueso y ver si existe en boneNames
+        const testTrack = clip.tracks.find(t => t.name.includes('.'));
+        if (!testTrack) return false;
+        const trackBoneName = testTrack.name.split('.')[0];
+        return boneNames.has(trackBoneName);
+      };
+
       loadedAnimClips.forEach(clip => {
-        if (!usedStates.has(clip.name)) {
+        if (!usedStates.has(clip.name) && isClipCompatible(clip)) {
           anims.push(clip);
           usedStates.add(clip.name);
           console.log(`  📥 BD complementa: "${clip.name}"`);
+        } else if (!isClipCompatible(clip)) {
+          console.log(`  ❌ BD clip "${clip.name}" ignorado (esqueleto incompatible)`);
         }
       });
     }
@@ -581,42 +600,71 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
   useEffect(() => {
     const root = groupRef.current;
     if (!root) return;
+    
+    // Limpiar mixer viejo si existe
+    if (mixerRef.current) {
+      mixerRef.current.stopAllAction();
+      if (mixerCloneRef.current) {
+        mixerRef.current.uncacheRoot(mixerCloneRef.current);
+      }
+    }
+
     const mixer = new THREE.AnimationMixer(root);
     mixerRef.current = mixer;
-    mixerCloneRef.current = clone;
+    mixerCloneRef.current = root; // Guardamos root en vez de clone para uncache seguro
+    actionsRef.current = {}; // Invalida actions anteriores
+
     return () => {
       mixer.stopAllAction();
       if (root) mixer.uncacheRoot(root);
-      mixerRef.current = null;
-      actionsRef.current = {};
+      if (mixerRef.current === mixer) mixerRef.current = null;
     };
   }, [clone]);
 
   // Actions: recrear cuando allAnimations cambia (BD cargó, o modelo cambió)
-  // Usa mixerRef del effect anterior — garantizado por orden de useEffect en React.
+  // Usa un timeout pequeño para garantizar que el mixer ha sido creado
+  // por el useEffect anterior (React order execution no siempre es síncrono si hay suspense/async).
   useEffect(() => {
-    const mixer = mixerRef.current;
-    const root = groupRef.current;
-    if (!mixer || !root || allAnimations.length === 0) return;
+    let active = true;
 
-    // Limpiar actions anteriores del mismo mixer
-    mixer.stopAllAction();
-    Object.values(actionsRef.current).forEach(a => {
-      try { mixer.uncacheAction(a.getClip(), root); } catch(_) {}
-    });
+    const setupActions = () => {
+      const mixer = mixerRef.current;
+      const root = groupRef.current;
+      if (!mixer || !root || allAnimations.length === 0 || !active) return;
 
-    const newActions: Record<string, THREE.AnimationAction> = {};
-    allAnimations.forEach(clip => {
-      newActions[clip.name] = mixer.clipAction(clip, root);
-    });
-    actionsRef.current = newActions;
-    clipVersionRef.current++;
+      // Limpiar actions anteriores del mismo mixer
+      mixer.stopAllAction();
+      Object.values(actionsRef.current).forEach(a => {
+        try { mixer.uncacheAction(a.getClip(), root); } catch(_) {}
+      });
 
-    if (newActions['idle']) {
-      newActions['idle'].reset().fadeIn(0.2).play();
-    }
-    setCurrentAnimation('idle');
-  }, [allAnimations]);
+      const newActions: Record<string, THREE.AnimationAction> = {};
+      allAnimations.forEach(clip => {
+        // Envolver en try-catch por seguridad contra PropertyBinding errors
+        try {
+          newActions[clip.name] = mixer.clipAction(clip, root);
+        } catch (err) {
+          console.warn(`Error creando action para ${clip.name}:`, err);
+        }
+      });
+      actionsRef.current = newActions;
+      clipVersionRef.current++;
+
+      if (newActions['idle']) {
+        newActions['idle'].reset().fadeIn(0.2).play();
+      }
+      setCurrentAnimation('idle');
+    };
+
+    // Delay mínimo (0ms) envía la ejecución al final del event loop
+    // garantizando que el useEffect de [clone] terminó su limpieza/creación
+    const timerId = setTimeout(setupActions, 0);
+
+    return () => {
+      active = false;
+      clearTimeout(timerId);
+    };
+  }, [allAnimations, clone]); // Depender de clone asegura re-run cuando se crea nuevo mixer
 
   // Avanzar mixer cada frame + invalidar para frameloop="demand"
   useFrame((state, delta) => {
