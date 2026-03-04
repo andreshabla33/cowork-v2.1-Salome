@@ -560,11 +560,37 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
 
     // --- Paso 2: Complementar con animaciones de BD (estados no cubiertos por embebidas) ---
     if (loadedAnimClips.length > 0) {
+      // Filtrar tracks incompatibles de cada clip para que Three.js no tire warnings masivos
+      // 'PropertyBinding: No target node found' que crashean el WebGLRenderer.
+      const sanitizeClipForSkeleton = (clip: THREE.AnimationClip): THREE.AnimationClip | null => {
+        if (clip.tracks.length === 0) return null;
+        
+        // Clonar el clip para no mutar el estado global/cacheado
+        const safeClip = clip.clone();
+        
+        // Filtrar tracks dejando solo los que existen en el esqueleto actual
+        safeClip.tracks = safeClip.tracks.filter(track => {
+          const trackBoneName = track.name.split('.')[0];
+          // Solo permitir tracks que apunten a un hueso existente en este modelo
+          return boneNames.has(trackBoneName);
+        });
+
+        // Si después de filtrar no quedaron tracks válidos (ej: esqueleto 100% distinto), descartar clip
+        if (safeClip.tracks.length === 0) return null;
+        
+        return safeClip;
+      };
+
       loadedAnimClips.forEach(clip => {
         if (!usedStates.has(clip.name)) {
-          anims.push(clip);
-          usedStates.add(clip.name);
-          console.log(`  📥 BD complementa: "${clip.name}"`);
+          const safeClip = sanitizeClipForSkeleton(clip);
+          if (safeClip) {
+            anims.push(safeClip);
+            usedStates.add(safeClip.name);
+            console.log(`  📥 BD complementa: "${safeClip.name}" (${safeClip.tracks.length}/${clip.tracks.length} tracks)`);
+          } else {
+            console.log(`  ❌ BD clip "${clip.name}" ignorado (0 tracks compatibles)`);
+          }
         }
       });
     }
