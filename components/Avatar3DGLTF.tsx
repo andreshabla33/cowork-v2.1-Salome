@@ -266,13 +266,61 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
   // Obtener nodos del grafo clonado (necesario para animated components si los hubiera)
   const { nodes } = useGraph(clone);
 
-  // Escala viene 100% de la BD (avatarConfig.escala). No auto-escalar.
-  // Box3.setFromObject NO funciona con SkinnedMesh (reporta h=0.027 en vez de 1.7).
-  // Solo calcular Y-offset para posicionar la base del modelo en Y=0.
+  // Auto-scale: medir altura real del modelo por esqueleto (bones) y normalizar.
+  // Box3.setFromObject NO es fiable con SkinnedMesh → usar bone world positions.
+  // Best practice: https://discourse.threejs.org/t/normalized-scale-for-different-size-meshes/22330
   const { modelScaleCorrection, modelYOffset } = useMemo(() => {
-    console.log(`📐 ${avatarConfig?.nombre || 'avatar'}: escala BD=${avatarConfig?.escala || 1} (sin auto-scale)`);
-    return { modelScaleCorrection: 1, modelYOffset: 0 };
-  }, [scene]);
+    const TARGET_HEIGHT = 1.0;  // Altura objetivo (unidades del mundo virtual)
+    const MIN_HEIGHT = 0.3;     // Si el modelo mide menos, escalar hacia arriba
+    const MAX_HEIGHT = 1.5;     // Si el modelo mide más, escalar hacia abajo
+
+    // Actualizar matrices del mundo para que getWorldPosition funcione
+    clone.updateWorldMatrix(true, true);
+    clone.traverse((child: any) => { child.updateWorldMatrix(true, false); });
+
+    // Medir altura por bone positions (más fiable que Box3 para SkinnedMesh)
+    let minY = Infinity, maxY = -Infinity;
+    let hasBones = false;
+    clone.traverse((child: any) => {
+      if (child.isBone) {
+        hasBones = true;
+        const wp = new THREE.Vector3();
+        child.getWorldPosition(wp);
+        if (wp.y < minY) minY = wp.y;
+        if (wp.y > maxY) maxY = wp.y;
+      }
+    });
+
+    let measuredHeight = 0;
+    if (hasBones && maxY > minY) {
+      measuredHeight = maxY - minY;
+    } else {
+      // Fallback: Box3 para modelos sin esqueleto
+      const box = new THREE.Box3().setFromObject(clone);
+      const size = new THREE.Vector3();
+      box.getSize(size);
+      measuredHeight = size.y;
+      minY = box.min.y;
+    }
+
+    if (measuredHeight < 0.01) {
+      console.log(`📐 ${avatarConfig?.nombre || 'avatar'}: altura no medible, sin auto-scale`);
+      return { modelScaleCorrection: 1, modelYOffset: 0 };
+    }
+
+    let correction = 1;
+    if (measuredHeight > MAX_HEIGHT) {
+      correction = TARGET_HEIGHT / measuredHeight;
+    } else if (measuredHeight < MIN_HEIGHT) {
+      correction = TARGET_HEIGHT / measuredHeight;
+    }
+    // Clamp final por seguridad
+    correction = Math.max(0.1, Math.min(5.0, correction));
+    const yOffset = -minY * correction;
+
+    console.log(`📐 ${avatarConfig?.nombre || 'avatar'}: altura=${measuredHeight.toFixed(3)}, correction=${correction.toFixed(3)} (target=${TARGET_HEIGHT}, rango=[${MIN_HEIGHT}-${MAX_HEIGHT}])`);
+    return { modelScaleCorrection: correction, modelYOffset: yOffset };
+  }, [clone]);
 
   // Recopilar nombres de huesos del modelo + detectar cadena spine por jerarquía
   const { boneNames, spineChainMap } = useMemo(() => {
@@ -359,10 +407,12 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
   const [loadedAnimClips, setLoadedAnimClips] = useState<THREE.AnimationClip[]>([]);
   const animConfigRef = useRef<AnimationConfig[] | null>(null);
   const currentAvatarIdRef = useRef<string | null>(null);
+  const boneCountRef = useRef<number>(0);
 
   useEffect(() => {
     const animConfigs = avatarConfig?.animaciones;
     const avatarId = avatarConfig?.id || null;
+    const boneCount = boneNames.size;
 
     // Si no hay configs de BD, nada que cargar
     if (!animConfigs || animConfigs.length === 0) {
@@ -370,10 +420,15 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
       return;
     }
 
-    // Evitar recarga si el avatar y configs son los mismos
-    if (avatarId === currentAvatarIdRef.current && animConfigRef.current === animConfigs) return;
+    // No cargar si aún no tenemos huesos (modelo no cargado)
+    if (boneCount === 0) return;
+
+    // Evitar recarga si avatar, configs Y huesos son los mismos
+    // (boneCount cambia al cargar nuevo modelo → invalida caché → recarga con huesos correctos)
+    if (avatarId === currentAvatarIdRef.current && animConfigRef.current === animConfigs && boneCountRef.current === boneCount) return;
     currentAvatarIdRef.current = avatarId;
     animConfigRef.current = animConfigs;
+    boneCountRef.current = boneCount;
 
     const loader = new GLTFLoader();
     let cancelled = false;
