@@ -16,3 +16,4 @@ export { useLiveKit } from './useLiveKit';
 export { useWebRTC } from './useWebRTC';
 export { useGatherInteractions } from './useGatherInteractions';
 export { useSpace3D } from './useSpace3D';
+export { useEspacioObjetos } from './useEspacioObjetos';

@@ -19,6 +19,7 @@ import { DayNightCycle } from './3d/DayNightCycle';
 import { hapticFeedback } from '@/lib/mobileDetect';
 import { GamificacionPanel } from './GamificacionPanel';
 import { useSpace3D } from '@/hooks/space3d';
+import { useEspacioObjetos } from '@/hooks/space3d/useEspacioObjetos';
 import { setBroadcastSoundFunctions } from '@/hooks/space3d/useBroadcast';
 // GameHub ahora se importa en WorkspaceLayout
 
@@ -70,6 +71,12 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
 
   // Interactions
   const { selectedRemoteUser, setSelectedRemoteUser, followTargetId, setFollowTargetId, followTargetIdRef, handleClickRemoteAvatar, avatarInteractionsMemo, handleWaveUser, handleInviteUser, handleFollowUser } = s.interactions;
+
+  // Objetos persistentes (escritorios reclamables)
+  const { objetos: espacioObjetos, reclamarObjeto, liberarObjeto, spawnPersonal } = useEspacioObjetos(
+    activeWorkspace?.id || null,
+    session?.user?.id || null
+  );
 
   // Inyectar funciones de sonido al hook de broadcast
   useEffect(() => {
@@ -195,6 +202,9 @@ const VirtualSpace3D: React.FC<VirtualSpace3DProps> = ({ theme = 'dark', isGameH
             onXPEvent={grantXP}
             onClickRemoteAvatar={handleClickRemoteAvatar}
             avatarInteractions={avatarInteractionsMemo}
+            espacioObjetos={espacioObjetos}
+            onReclamarObjeto={reclamarObjeto}
+            onLiberarObjeto={liberarObjeto}
             onTapFloor={isMobile ? (point) => {
               // Mobile: single tap = walk/teleport (misma lógica que double-click en desktop)
               const playerX = (currentUserEcs.x || 400) / 16;

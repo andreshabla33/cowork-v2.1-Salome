@@ -17,6 +17,8 @@ import { GLTFAvatar, useAvatarControls, AnimationState } from '../Avatar3DGLTF';
 import { VideoWithBackground } from '../VideoWithBackground';
 import { GhostAvatar } from '../3d/GhostAvatar';
 import { ZonaEmpresa as ZonaEmpresa3D } from '../3d/ZonaEmpresa';
+import { Escritorio3D } from '../3d/Escritorio3D';
+import type { EspacioObjeto } from '@/hooks/space3d/useEspacioObjetos';
 import { DayNightCycle } from '../3d/DayNightCycle';
 import { ObjetosInteractivos } from '../3d/ObjetosInteractivos';
 import { ParticulasClima } from '../3d/ParticulasClima';
@@ -1520,9 +1522,13 @@ export interface SceneProps {
   onXPEvent?: (accion: string, cooldownMs?: number) => void;
   onClickRemoteAvatar?: (userId: string) => void;
   avatarInteractions?: AvatarProps['avatarInteractions'];
+  espacioObjetos?: EspacioObjeto[];
+  onReclamarObjeto?: (id: string) => void;
+  onLiberarObjeto?: (id: string) => void;
+  objetoOwnerNames?: Map<string, string>;
 }
 
-export const Scene: React.FC<SceneProps> = ({ currentUser, onlineUsers, setPosition, theme, orbitControlsRef, stream, remoteStreams, showVideoBubbles = true, localMessage, remoteMessages, localReactions, remoteReaction, onClickAvatar, moveTarget, onReachTarget, onDoubleClickFloor, onTapFloor, teleportTarget, onTeleportDone, showFloorGrid = false, showNamesAboveAvatars = true, cameraSensitivity = 5, invertYAxis = false, cameraMode = 'free', realtimePositionsRef, interpolacionWorkerRef, posicionesInterpoladasRef, ecsStateRef, broadcastMovement, moveSpeed, runSpeed, zonasEmpresa = [], onZoneCollision, usersInCallIds, usersInAudioRangeIds, empresasAutorizadas = [], mobileInputRef, enableDayNightCycle = false, onXPEvent, onClickRemoteAvatar, avatarInteractions }) => {
+export const Scene: React.FC<SceneProps> = ({ currentUser, onlineUsers, setPosition, theme, orbitControlsRef, stream, remoteStreams, showVideoBubbles = true, localMessage, remoteMessages, localReactions, remoteReaction, onClickAvatar, moveTarget, onReachTarget, onDoubleClickFloor, onTapFloor, teleportTarget, onTeleportDone, showFloorGrid = false, showNamesAboveAvatars = true, cameraSensitivity = 5, invertYAxis = false, cameraMode = 'free', realtimePositionsRef, interpolacionWorkerRef, posicionesInterpoladasRef, ecsStateRef, broadcastMovement, moveSpeed, runSpeed, zonasEmpresa = [], onZoneCollision, usersInCallIds, usersInAudioRangeIds, empresasAutorizadas = [], mobileInputRef, enableDayNightCycle = false, onXPEvent, onClickRemoteAvatar, avatarInteractions, espacioObjetos = [], onReclamarObjeto, onLiberarObjeto, objetoOwnerNames }) => {
   const gridColor = theme === 'arcade' ? '#00ff41' : '#6366f1';
   const { camera } = useThree();
   const frustumRef = useRef(new THREE.Frustum());
@@ -1729,6 +1735,19 @@ export const Scene: React.FC<SceneProps> = ({ currentUser, onlineUsers, setPosit
           </mesh>
         </group>
       )}
+
+      {/* Escritorios persistentes desde BD */}
+      {espacioObjetos.map((obj) => (
+        <Escritorio3D
+          key={obj.id}
+          objeto={obj}
+          playerPosition={playerColliderPositionRef.current}
+          currentUserId={currentUser.id || null}
+          onReclamar={onReclamarObjeto || (() => {})}
+          onLiberar={onLiberarObjeto || (() => {})}
+          ownerName={objetoOwnerNames?.get(obj.owner_id || '') || null}
+        />
+      ))}
 
       {/* Mesas y objetos (Demo) */}
       <mesh position={[10, 0.5, 10]} castShadow receiveShadow>
