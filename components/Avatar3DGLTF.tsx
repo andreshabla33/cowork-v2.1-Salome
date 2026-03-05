@@ -255,63 +255,50 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
   // Obtener nodos del grafo clonado (necesario para animated components si los hubiera)
   const { nodes } = useGraph(clone);
 
-  // Auto-scale basado en posiciones de huesos del esqueleto.
-  // Box3.setFromObject NO funciona con SkinnedMesh → usamos bone.getWorldPosition().
-  // Mide altura real del skeleton (Head.Y - LowestFoot.Y) y normaliza a TARGET_HEIGHT.
+  // Auto-scale: medir altura REAL de la geometría (no huesos, que están en bone-space).
+  // Box3.setFromObject NO funciona con SkinnedMesh → iteramos vértices + matrixWorld.
+  // Esto da la altura renderizada real en bind pose.
   const TARGET_HEIGHT = 1.8; // metros — altura objetivo para todos los avatares
-  const MIN_SCALE = 0.5;
-  const MAX_SCALE = 100;
+  const MIN_CORRECTION = 0.5;
+  const MAX_CORRECTION = 200;
 
   const { modelScaleCorrection, modelYOffset } = useMemo(() => {
-    // Recorrer huesos para encontrar posiciones extremas Y
-    let headY = -Infinity;
-    let footY = Infinity;
-    let foundHead = false;
-    let foundFoot = false;
+    // Forzar actualización de TODAS las matrices del árbol clonado
+    clone.updateMatrixWorld(true);
+
+    let minY = Infinity;
+    let maxY = -Infinity;
+    let vertexCount = 0;
+    const _v = new THREE.Vector3();
 
     clone.traverse((child: any) => {
-      if (!child.isBone) return;
-      const boneName = normalizeBoneName(child.name).toLowerCase();
+      if (!(child.isMesh || child.isSkinnedMesh)) return;
+      const geo = child.geometry;
+      const pos = geo?.attributes?.position;
+      if (!pos) return;
 
-      // Actualizar matrices para obtener posición mundial correcta
-      child.updateWorldMatrix(true, false);
-      const worldPos = new THREE.Vector3();
-      child.getWorldPosition(worldPos);
-
-      if (boneName === 'head' || boneName === 'headtop_end' || boneName === 'headtop') {
-        if (worldPos.y > headY) { headY = worldPos.y; foundHead = true; }
-      }
-      if (boneName.includes('foot') || boneName.includes('toe')) {
-        if (worldPos.y < footY) { footY = worldPos.y; foundFoot = true; }
+      // Muestrear vértices (cada 10 para rendimiento, suficiente para min/max Y)
+      const step = Math.max(1, Math.floor(pos.count / 200));
+      for (let i = 0; i < pos.count; i += step) {
+        _v.fromBufferAttribute(pos, i);
+        _v.applyMatrix4(child.matrixWorld);
+        if (_v.y < minY) minY = _v.y;
+        if (_v.y > maxY) maxY = _v.y;
+        vertexCount++;
       }
     });
 
-    // Si no encontramos head/foot, buscar extremos Y entre TODOS los huesos
-    if (!foundHead || !foundFoot) {
-      clone.traverse((child: any) => {
-        if (!child.isBone) return;
-        child.updateWorldMatrix(true, false);
-        const wp = new THREE.Vector3();
-        child.getWorldPosition(wp);
-        if (wp.y > headY) headY = wp.y;
-        if (wp.y < footY) footY = wp.y;
-      });
-    }
-
-    const skeletonHeight = headY - footY;
+    const geometryHeight = maxY - minY;
     let correction = 1;
     let yOffset = 0;
 
-    if (skeletonHeight > 0.01) {
-      // Calcular corrección para llegar a TARGET_HEIGHT
-      correction = TARGET_HEIGHT / skeletonHeight;
-      // Clamp entre MIN y MAX
-      correction = Math.max(MIN_SCALE, Math.min(MAX_SCALE, correction));
-      // Y-offset: subir el modelo para que los pies estén en Y=0
-      yOffset = -footY * correction;
+    if (geometryHeight > 0.001 && vertexCount > 0) {
+      correction = TARGET_HEIGHT / geometryHeight;
+      correction = Math.max(MIN_CORRECTION, Math.min(MAX_CORRECTION, correction));
+      yOffset = -minY;
     }
 
-    console.log(`📐 ${avatarConfig?.nombre || 'avatar'}: h_huesos=${skeletonHeight.toFixed(3)}m → correction=${correction.toFixed(2)} (escala BD=${avatarConfig?.escala || 1})`);
+    console.log(`📐 ${avatarConfig?.nombre || 'avatar'}: h_geo=${geometryHeight.toFixed(4)}m (${vertexCount} verts) → correction=${correction.toFixed(2)} (escala BD=${avatarConfig?.escala || 1})`);
     return { modelScaleCorrection: correction, modelYOffset: yOffset };
   }, [clone]);
 
