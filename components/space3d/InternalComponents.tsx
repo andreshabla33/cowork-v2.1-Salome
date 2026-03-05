@@ -1522,7 +1522,7 @@ export interface SceneProps {
   avatarInteractions?: AvatarProps['avatarInteractions'];
 }
 
-export const Scene: React.FC<SceneProps> = ({ currentUser, onlineUsers, setPosition, theme, orbitControlsRef, stream, remoteStreams, showVideoBubbles = true, localMessage, remoteMessages, localReactions, remoteReaction, onClickAvatar, moveTarget, onReachTarget, onDoubleClickFloor, onTapFloor, teleportTarget, onTeleportDone, showFloorGrid = true, showNamesAboveAvatars = true, cameraSensitivity = 5, invertYAxis = false, cameraMode = 'free', realtimePositionsRef, interpolacionWorkerRef, posicionesInterpoladasRef, ecsStateRef, broadcastMovement, moveSpeed, runSpeed, zonasEmpresa = [], onZoneCollision, usersInCallIds, usersInAudioRangeIds, empresasAutorizadas = [], mobileInputRef, enableDayNightCycle = false, onXPEvent, onClickRemoteAvatar, avatarInteractions }) => {
+export const Scene: React.FC<SceneProps> = ({ currentUser, onlineUsers, setPosition, theme, orbitControlsRef, stream, remoteStreams, showVideoBubbles = true, localMessage, remoteMessages, localReactions, remoteReaction, onClickAvatar, moveTarget, onReachTarget, onDoubleClickFloor, onTapFloor, teleportTarget, onTeleportDone, showFloorGrid = false, showNamesAboveAvatars = true, cameraSensitivity = 5, invertYAxis = false, cameraMode = 'free', realtimePositionsRef, interpolacionWorkerRef, posicionesInterpoladasRef, ecsStateRef, broadcastMovement, moveSpeed, runSpeed, zonasEmpresa = [], onZoneCollision, usersInCallIds, usersInAudioRangeIds, empresasAutorizadas = [], mobileInputRef, enableDayNightCycle = false, onXPEvent, onClickRemoteAvatar, avatarInteractions }) => {
   const gridColor = theme === 'arcade' ? '#00ff41' : '#6366f1';
   const { camera } = useThree();
   const frustumRef = useRef(new THREE.Frustum());
@@ -1633,10 +1633,20 @@ export const Scene: React.FC<SceneProps> = ({ currentUser, onlineUsers, setPosit
         />
       )}
       
-      {/* Piso sólido */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[WORLD_SIZE / 2, -0.01, WORLD_SIZE / 2]} receiveShadow>
+      {/* Piso sólido texturizado/estilizado */}
+      <mesh 
+        rotation={[-Math.PI / 2, 0, 0]} 
+        position={[WORLD_SIZE / 2, -0.01, WORLD_SIZE / 2]} 
+        receiveShadow
+        onDoubleClick={onDoubleClickFloor}
+        onPointerUp={onTapFloor}
+      >
         <planeGeometry args={[WORLD_SIZE * 2, WORLD_SIZE * 2]} />
-        <meshStandardMaterial color={themeColors[theme] || themeColors.dark} />
+        <meshStandardMaterial 
+          color={theme === 'dark' ? '#1e293b' : theme === 'arcade' ? '#0f172a' : '#f1f5f9'} 
+          roughness={0.8}
+          metalness={0.1}
+        />
       </mesh>
 
       {/* Zonas por empresa */}
@@ -1695,21 +1705,6 @@ export const Scene: React.FC<SceneProps> = ({ currentUser, onlineUsers, setPosit
         })}
       </Physics>
       
-      {/* Suelo base: double-click (desktop) o single-tap (mobile) para mover */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.1, 0]}
-        onClick={(e) => {
-          e.stopPropagation();
-          if (onTapFloor) onTapFloor(e.point);
-        }}
-        onDoubleClick={(e) => {
-          e.stopPropagation();
-          if (onDoubleClickFloor) onDoubleClickFloor(e.point);
-        }}
-      >
-        <planeGeometry args={[1000, 1000]} />
-        <meshBasicMaterial visible={false} />
-      </mesh>
-
       {/* Marcador visual del destino (estilo Gather) */}
       {moveTarget && (
         <group position={[moveTarget.x, 0.05, moveTarget.z]}>
