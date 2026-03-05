@@ -1633,13 +1633,11 @@ export const Scene: React.FC<SceneProps> = ({ currentUser, onlineUsers, setPosit
         />
       )}
       
-      {/* Piso sólido texturizado/estilizado */}
+      {/* Piso sólido texturizado/estilizado (Solo visual, sin eventos de puntero para no interferir con las lógicas previas) */}
       <mesh 
         rotation={[-Math.PI / 2, 0, 0]} 
-        position={[WORLD_SIZE / 2, -0.01, WORLD_SIZE / 2]} 
+        position={[WORLD_SIZE / 2, -0.02, WORLD_SIZE / 2]} 
         receiveShadow
-        onDoubleClick={onDoubleClickFloor}
-        onPointerUp={onTapFloor}
       >
         <planeGeometry args={[WORLD_SIZE * 2, WORLD_SIZE * 2]} />
         <meshStandardMaterial 
@@ -1647,6 +1645,22 @@ export const Scene: React.FC<SceneProps> = ({ currentUser, onlineUsers, setPosit
           roughness={0.8}
           metalness={0.1}
         />
+      </mesh>
+
+      {/* Suelo base invisible para Raycast (eventos de clic/tap) — Restaurado para mantener estabilidad de colisiones y coordenadas */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (onTapFloor) onTapFloor(e.point);
+        }}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          if (onDoubleClickFloor) onDoubleClickFloor(e.point);
+        }}
+        visible={false}
+      >
+        <planeGeometry args={[1000, 1000]} />
+        <meshBasicMaterial transparent opacity={0} />
       </mesh>
 
       {/* Zonas por empresa */}
