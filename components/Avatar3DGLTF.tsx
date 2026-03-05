@@ -231,36 +231,19 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
     // SkeletonUtils.clone para modelos con esqueleto, .clone() normal para estáticos
     const clonedScene = hasSkinnedMesh ? SkeletonUtils.clone(scene) : scene.clone(true);
 
-    // Clonar materiales SIEMPRE (evitar compartir entre instancias) y fix de texturas.
-    // Best practice: SkeletonUtils.clone NO clona materiales → hacerlo manualmente.
+    // Asegurar que texturas y materiales embebidos del GLB se rendericen correctamente
     clonedScene.traverse((child: any) => {
       if ((child.isMesh || child.isSkinnedMesh) && child.material) {
-        // Clonar material(es) para evitar corrupción entre instancias
-        child.material = Array.isArray(child.material)
-          ? child.material.map((m: any) => m.clone())
-          : child.material.clone();
-
+        // Clonar material para no afectar el original compartido
+        if (!hasSkinnedMesh) {
+          child.material = child.material.clone();
+        }
         const mats = Array.isArray(child.material) ? child.material : [child.material];
         mats.forEach((mat: any) => {
-          // Fix color space en TODOS los mapas de textura (no solo .map)
-          if (mat.map) { mat.map.colorSpace = THREE.SRGBColorSpace; mat.map.needsUpdate = true; }
-          if (mat.emissiveMap) { mat.emissiveMap.colorSpace = THREE.SRGBColorSpace; mat.emissiveMap.needsUpdate = true; }
-
-          // Fix morado: desactivar vertex colors que tintan el material (común en Mixamo)
-          // Solo si el material tiene textura propia (map), las vertex colors no son necesarias
-          if (mat.vertexColors && mat.map) {
-            mat.vertexColors = false;
-            mat.color = new THREE.Color(1, 1, 1); // Reset a blanco para que textura se vea limpia
+          if (mat.map) {
+            mat.map.colorSpace = THREE.SRGBColorSpace;
+            mat.map.needsUpdate = true;
           }
-
-          // Fix transparencia: asegurar opacidad completa si no es intencionalmente transparente
-          if (mat.opacity < 0.9 && !mat.alphaMap && !mat.alphaTest) {
-            mat.opacity = 1.0;
-            mat.transparent = false;
-          }
-
-          // Renderizar ambos lados (evita caras invisibles en modelos con normales invertidas)
-          mat.side = THREE.DoubleSide;
           mat.needsUpdate = true;
         });
       }
