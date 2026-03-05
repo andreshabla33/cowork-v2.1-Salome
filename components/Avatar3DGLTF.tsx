@@ -255,13 +255,65 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
   // Obtener nodos del grafo clonado (necesario para animated components si los hubiera)
   const { nodes } = useGraph(clone);
 
-  // Escala viene 100% de la BD (avatarConfig.escala). No auto-escalar.
-  // Box3.setFromObject NO funciona con SkinnedMesh (reporta h=0.027 en vez de 1.7).
-  // Solo calcular Y-offset para posicionar la base del modelo en Y=0.
+  // Auto-scale basado en posiciones de huesos del esqueleto.
+  // Box3.setFromObject NO funciona con SkinnedMesh → usamos bone.getWorldPosition().
+  // Mide altura real del skeleton (Head.Y - LowestFoot.Y) y normaliza a TARGET_HEIGHT.
+  const TARGET_HEIGHT = 1.8; // metros — altura objetivo para todos los avatares
+  const MIN_SCALE = 0.5;
+  const MAX_SCALE = 100;
+
   const { modelScaleCorrection, modelYOffset } = useMemo(() => {
-    console.log(`📐 ${avatarConfig?.nombre || 'avatar'}: escala BD=${avatarConfig?.escala || 1} (sin auto-scale)`);
-    return { modelScaleCorrection: 1, modelYOffset: 0 };
-  }, [scene]);
+    // Recorrer huesos para encontrar posiciones extremas Y
+    let headY = -Infinity;
+    let footY = Infinity;
+    let foundHead = false;
+    let foundFoot = false;
+
+    clone.traverse((child: any) => {
+      if (!child.isBone) return;
+      const boneName = normalizeBoneName(child.name).toLowerCase();
+
+      // Actualizar matrices para obtener posición mundial correcta
+      child.updateWorldMatrix(true, false);
+      const worldPos = new THREE.Vector3();
+      child.getWorldPosition(worldPos);
+
+      if (boneName === 'head' || boneName === 'headtop_end' || boneName === 'headtop') {
+        if (worldPos.y > headY) { headY = worldPos.y; foundHead = true; }
+      }
+      if (boneName.includes('foot') || boneName.includes('toe')) {
+        if (worldPos.y < footY) { footY = worldPos.y; foundFoot = true; }
+      }
+    });
+
+    // Si no encontramos head/foot, buscar extremos Y entre TODOS los huesos
+    if (!foundHead || !foundFoot) {
+      clone.traverse((child: any) => {
+        if (!child.isBone) return;
+        child.updateWorldMatrix(true, false);
+        const wp = new THREE.Vector3();
+        child.getWorldPosition(wp);
+        if (wp.y > headY) headY = wp.y;
+        if (wp.y < footY) footY = wp.y;
+      });
+    }
+
+    const skeletonHeight = headY - footY;
+    let correction = 1;
+    let yOffset = 0;
+
+    if (skeletonHeight > 0.01) {
+      // Calcular corrección para llegar a TARGET_HEIGHT
+      correction = TARGET_HEIGHT / skeletonHeight;
+      // Clamp entre MIN y MAX
+      correction = Math.max(MIN_SCALE, Math.min(MAX_SCALE, correction));
+      // Y-offset: subir el modelo para que los pies estén en Y=0
+      yOffset = -footY * correction;
+    }
+
+    console.log(`📐 ${avatarConfig?.nombre || 'avatar'}: h_huesos=${skeletonHeight.toFixed(3)}m → correction=${correction.toFixed(2)} (escala BD=${avatarConfig?.escala || 1})`);
+    return { modelScaleCorrection: correction, modelYOffset: yOffset };
+  }, [clone]);
 
   // Recopilar nombres de huesos del modelo + detectar cadena spine por jerarquía
   const { boneNames, spineChainMap } = useMemo(() => {
@@ -347,6 +399,16 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
   const [loadedAnimClips, setLoadedAnimClips] = useState<Record<string, THREE.AnimationClip>>({});
   const animConfigRef = useRef<string>('');
   const currentAvatarIdRef = useRef<string>('');
+
+  // Reset cache cuando cambia el avatar (fix T-pose al cambiar sin reload)
+  useEffect(() => {
+    const newId = avatarConfig?.id || '_default_';
+    if (newId !== currentAvatarIdRef.current) {
+      currentAvatarIdRef.current = '';
+      animConfigRef.current = '';
+      setLoadedAnimClips({});
+    }
+  }, [avatarConfig?.id]);
 
   useEffect(() => {
     if (boneNames.size === 0) return;
