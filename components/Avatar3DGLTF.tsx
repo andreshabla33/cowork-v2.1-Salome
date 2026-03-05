@@ -101,6 +101,7 @@ function remapAnimationTracks(
   boneNames: Set<string>,
   stripRootMotion = false,
   spineOverrides?: Map<string, string>,
+  stripPositions = false,
 ): THREE.AnimationClip {
   const remapped = clip.clone();
 
@@ -165,10 +166,18 @@ function remapAnimationTracks(
     const boneName = dotIdx !== -1 ? track.name.substring(0, dotIdx) : track.name;
     if (!boneNames.has(boneName)) return false;
 
-    // Strip root motion: eliminar position tracks del Hips (root bone)
-    // Esto evita que el avatar "salte atrás" al reiniciar el loop de walk/run
-    if (stripRootMotion) {
-      const property = track.name.substring(dotIdx);
+    const property = track.name.substring(dotIdx);
+
+    // En animaciones fallback (cross-skeleton):
+    // Eliminar TODAS las rotaciones de escala (.scale) y posición (.position).
+    // Esto evita la "cabeza gigante" (escala de Monica) y el "encogimiento" (posiciones cortas).
+    if (stripPositions && (property === '.position' || property === '.scale')) {
+      return false;
+    }
+
+    // Strip root motion: eliminar position tracks del Hips (root bone) para walk/run
+    // Esto evita que el avatar "salte atrás" al reiniciar el loop
+    if (stripPositions) {
       const isHips = boneName.toLowerCase().includes('hips');
       if (isHips && property === '.position') return false;
     }
@@ -255,52 +264,12 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
   // Obtener nodos del grafo clonado (necesario para animated components si los hubiera)
   const { nodes } = useGraph(clone);
 
-  // Auto-scale: medir altura REAL de la geometría (no huesos, que están en bone-space).
-  // Box3.setFromObject NO funciona con SkinnedMesh → iteramos vértices + matrixWorld.
-  // Esto da la altura renderizada real en bind pose.
-  const TARGET_HEIGHT = 1.8; // metros — altura objetivo para todos los avatares
-  const MIN_CORRECTION = 0.5;
-  const MAX_CORRECTION = 200;
-
+  // Escala 100% desde la BD (avatarConfig.escala). 
+  // No auto-escalar, ya que Box3/vertices fallan consistentemente con SkinnedMesh variados.
   const { modelScaleCorrection, modelYOffset } = useMemo(() => {
-    // Forzar actualización de TODAS las matrices del árbol clonado
-    clone.updateMatrixWorld(true);
-
-    let minY = Infinity;
-    let maxY = -Infinity;
-    let vertexCount = 0;
-    const _v = new THREE.Vector3();
-
-    clone.traverse((child: any) => {
-      if (!(child.isMesh || child.isSkinnedMesh)) return;
-      const geo = child.geometry;
-      const pos = geo?.attributes?.position;
-      if (!pos) return;
-
-      // Muestrear vértices (cada 10 para rendimiento, suficiente para min/max Y)
-      const step = Math.max(1, Math.floor(pos.count / 200));
-      for (let i = 0; i < pos.count; i += step) {
-        _v.fromBufferAttribute(pos, i);
-        _v.applyMatrix4(child.matrixWorld);
-        if (_v.y < minY) minY = _v.y;
-        if (_v.y > maxY) maxY = _v.y;
-        vertexCount++;
-      }
-    });
-
-    const geometryHeight = maxY - minY;
-    let correction = 1;
-    let yOffset = 0;
-
-    if (geometryHeight > 0.001 && vertexCount > 0) {
-      correction = TARGET_HEIGHT / geometryHeight;
-      correction = Math.max(MIN_CORRECTION, Math.min(MAX_CORRECTION, correction));
-      yOffset = -minY;
-    }
-
-    console.log(`📐 ${avatarConfig?.nombre || 'avatar'}: h_geo=${geometryHeight.toFixed(4)}m (${vertexCount} verts) → correction=${correction.toFixed(2)} (escala BD=${avatarConfig?.escala || 1})`);
-    return { modelScaleCorrection: correction, modelYOffset: yOffset };
-  }, [clone]);
+    console.log(`📐 ${avatarConfig?.nombre || 'avatar'}: escala BD=${avatarConfig?.escala || 1} (fija, sin auto-scale)`);
+    return { modelScaleCorrection: 1, modelYOffset: 0 };
+  }, [avatarConfig?.escala, avatarConfig?.nombre]);
 
   // Recopilar nombres de huesos del modelo + detectar cadena spine por jerarquía
   const { boneNames, spineChainMap } = useMemo(() => {
