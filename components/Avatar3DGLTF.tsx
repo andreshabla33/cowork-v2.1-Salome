@@ -39,6 +39,10 @@ interface GLTFAvatarProps {
   scale?: number;
 }
 
+// Configurar DRACOLoader para soportar GLBs con compresión Draco (gltf-transform)
+// Los decoders están en public/draco/ (copiados de three/examples/jsm/libs/draco/)
+useGLTF.setDecoderPath('/draco/');
+
 // URL del modelo por defecto (fallback cuando no hay avatar configurado)
 const STORAGE_BASE = 'https://lcryrsdyrzotjqdxcwtp.supabase.co/storage/v1/object/public/avatars';
 const DEFAULT_MODEL_URL = `${STORAGE_BASE}/Monica_Idle.glb`;
