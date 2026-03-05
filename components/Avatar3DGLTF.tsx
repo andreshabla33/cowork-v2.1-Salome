@@ -50,6 +50,20 @@ const DEFAULT_MODEL_URL = `${STORAGE_BASE}/Monica_Idle.glb`;
 // Animaciones que hacen loop
 const LOOP_ANIMATIONS: AnimationState[] = ['idle', 'walk', 'run', 'dance'];
 
+// Mapeo de nombres de animaciones embebidas en GLB → AnimationState
+// Permite que GLBs all-in-one (ej: Ren_Final.glb) sean detectados automáticamente
+const EMBEDDED_NAME_MAP: Record<string, AnimationState> = {
+  'idle': 'idle', 'breathing idle': 'idle', 'happy idle': 'idle',
+  'walk': 'walk', 'walking': 'walk', 'walk forward': 'walk',
+  'run': 'run', 'running': 'run', 'jog': 'run', 'run forward': 'run',
+  'dance': 'dance', 'dancing': 'dance', 'hip hop dancing': 'dance', 'samba dancing': 'dance',
+  'cheer': 'cheer', 'cheering': 'cheer', 'cheer with both hands': 'cheer',
+  'sit': 'sit', 'sitting': 'sit', 'sitting idle': 'sit',
+  'wave': 'wave', 'waving': 'wave', 'wave gesture': 'wave',
+  'jump': 'jump', 'jumping': 'jump', 'happy jump': 'jump', 'happy jump f': 'jump',
+  'victory': 'victory', 'victory cheer': 'victory',
+};
+
 // Tabla de equivalencias entre convenciones de nombres de huesos
 // Después de normalizeBoneName (strip prefixes + leading zeros), estos aliases
 // cubren convenciones genuinamente distintas (ej: pelvis/hips, chest/spine1)
@@ -106,6 +120,7 @@ function remapAnimationTracks(
   stripRootMotion = false,
   spineOverrides?: Map<string, string>,
   stripPositions = false,
+  stripScale = false,
 ): THREE.AnimationClip {
   const remapped = clip.clone();
 
@@ -177,6 +192,10 @@ function remapAnimationTracks(
     // 1. Eliminar tracks de escala (evita cabezas gigantes si se hereda de un chibi)
     // 2. Mantener posiciones de huesos, ya que Mixamo a menudo define la longitud 
     //    de los huesos en el track de posición. Si los borramos, el esqueleto colapsa al piso.
+    // Strip scale tracks de animaciones embebidas del pipeline Blender:
+    // el factor 0.01 (FBX cm→m) puede quedar bakeado en los tracks, encogiendo el avatar.
+    if (stripScale && property === '.scale') return false;
+
     if (stripPositions) {
       if (property === '.scale') return false;
       // Solo eliminamos la posición global (Hips) para evitar que el avatar flote o se hunda 
@@ -388,6 +407,16 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
     const loadAnimations = async () => {
       let animaciones = avatarConfig?.animaciones;
 
+      // Si el GLB ya tiene múltiples animaciones embebidas → usarlas directamente, sin BD
+      // Esto aplica a avatares all-in-one (ej: Ren_Final.glb con idle/run/walk embebidas)
+      if (!animaciones || animaciones.length === 0) {
+        if (baseAnimations.length > 1) {
+          currentAvatarIdRef.current = cacheKey;
+          console.log(`🎬 ${avatarConfig?.nombre || 'avatar'}: GLB all-in-one (${baseAnimations.length} anims embebidas) — skip BD`);
+          return;
+        }
+      }
+
       // Si el config no trae animaciones, cargarlas de BD
       if (!animaciones || animaciones.length === 0) {
         let anims: any[] | null = null;
@@ -472,15 +501,38 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
     };
 
     loadAnimations();
-  }, [avatarConfig?.id, avatarConfig?.animaciones, boneNames]);
+  }, [avatarConfig?.id, avatarConfig?.animaciones, boneNames, baseAnimations]);
 
-  // ============== ANIMACIONES (MERGE: embebidas GLB + BD) — Patrón v3.8 ==============
-  // BD tiene prioridad para idle. Embebidas solo si BD no tiene idle.
-  // BD complementa con estados faltantes.
+  // ============== ANIMACIONES (MERGE: embebidas GLB + BD) — Patrón v4.0 ==============
   const allAnimations = useMemo(() => {
     const anims: THREE.AnimationClip[] = [];
 
-    // Idle: usar del BD si existe, sino del modelo embedded
+    // Branch A: GLB all-in-one — usar TODAS las animaciones embebidas, sin BD
+    // Se activa cuando el GLB tiene 2+ anims Y la BD no tiene nada cargado
+    if (baseAnimations.length > 1 && Object.keys(loadedAnimClips).length === 0) {
+      const used = new Set<AnimationState>();
+      baseAnimations.forEach((clip, idx) => {
+        const lower = clip.name.toLowerCase().trim();
+        let state: AnimationState | undefined = EMBEDDED_NAME_MAP[lower];
+        if (!state) {
+          for (const [key, val] of Object.entries(EMBEDDED_NAME_MAP)) {
+            if (lower.includes(key)) { state = val as AnimationState; break; }
+          }
+        }
+        if (!state && idx === 0) state = 'idle';
+        if (!state || used.has(state)) return;
+        used.add(state);
+        const stripRM = state === 'walk' || state === 'run';
+        // stripScale=true: elimina tracks .scale del pipeline Blender (factor 0.01 bakeado)
+        const remapped = remapAnimationTracks(clip, boneNames, stripRM, spineChainMap, false, true);
+        remapped.name = state;
+        anims.push(remapped);
+        console.log(`🎬 embedded: ${clip.name} → ${state}`);
+      });
+      return anims;
+    }
+
+    // Branch B: BD tiene prioridad para idle; embebidas como fallback
     if (loadedAnimClips['idle']) {
       anims.push(loadedAnimClips['idle']);
     } else if (baseAnimations.length > 0) {
