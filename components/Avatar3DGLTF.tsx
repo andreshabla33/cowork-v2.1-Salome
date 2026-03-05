@@ -85,7 +85,7 @@ function normalizeBoneName(name: string): string {
   // Quitar prefijo Armature| o Armature/ (Blender/Meshy)
   n = n.replace(/^Armature[|/]/, '');
   // Quitar prefijo mixamorig: (con dos puntos — Meshy AI) o mixamorig (sin separador — Mixamo directo)
-  n = n.replace(/^mixamorig[:]?/, '');
+  n = n.replace(/^mixamorig\d*[:]?/, '');
   // Quitar prefijo Character_ o Root_ (otros exportadores)
   n = n.replace(/^(Character_|Root_)/, '');
   // Normalizar sufijos numéricos: Spine01→Spine1, Spine02→Spine2, neck01→neck1
