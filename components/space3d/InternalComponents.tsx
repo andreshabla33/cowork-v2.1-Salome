@@ -1532,6 +1532,9 @@ export const Scene: React.FC<SceneProps> = ({ currentUser, onlineUsers, setPosit
   const playerColliderRef = useRef<any>(null);
   const playerColliderPositionRef = useRef({ x: (currentUser.x || 400) / 16, z: (currentUser.y || 400) / 16 });
   const zonaColisionRef = useRef<string | null>(null);
+  
+  // Cargar el modelo del terreno exportado desde Blender
+  const { scene: terrainScene } = useGLTF('/models/terrain.glb');
   const chairPositions = useMemo(
     () => [
       [8, 0.35, 8],
@@ -1633,19 +1636,8 @@ export const Scene: React.FC<SceneProps> = ({ currentUser, onlineUsers, setPosit
         />
       )}
       
-      {/* Piso sólido texturizado/estilizado (Solo visual, sin eventos de puntero para no interferir con las lógicas previas) */}
-      <mesh 
-        rotation={[-Math.PI / 2, 0, 0]} 
-        position={[WORLD_SIZE / 2, -0.02, WORLD_SIZE / 2]} 
-        receiveShadow
-      >
-        <planeGeometry args={[WORLD_SIZE * 2, WORLD_SIZE * 2]} />
-        <meshStandardMaterial 
-          color={theme === 'dark' ? '#1e293b' : theme === 'arcade' ? '#0f172a' : '#f1f5f9'} 
-          roughness={0.8}
-          metalness={0.1}
-        />
-      </mesh>
+      {/* Piso importado desde Blender (Estilo Riot Games: Malla estática pura con texturas) */}
+      <primitive object={terrainScene} receiveShadow />
 
       {/* Suelo base invisible para Raycast (eventos de clic/tap) — Restaurado para mantener estabilidad de colisiones y coordenadas */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]}
