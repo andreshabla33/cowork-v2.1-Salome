@@ -280,6 +280,12 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
           if (mat.map) {
             mat.map.colorSpace = THREE.SRGBColorSpace;
             mat.map.needsUpdate = true;
+            // Forzar PBR web-compatible para avatares del pipeline FBX→Blender→GLB.
+            // Sin esto, el metalness alto del exportador hace que el avatar se vea morado/azul
+            // al reflejar el entorno (que es azul oscuro en el espacio virtual).
+            mat.metalness = 0;
+            mat.roughness = 0.9;
+            mat.side = THREE.DoubleSide;
           }
           mat.needsUpdate = true;
         });
