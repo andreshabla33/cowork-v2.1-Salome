@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Building2, Check, MapPin, Plus, RefreshCw, Send, XCircle } from 'lucide-react';
+import { Building2, Check, MapPin, Plus, RefreshCw, Send, Sparkles, XCircle, LayoutGrid, Circle, Hexagon, Eye, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { AutorizacionEmpresa, ZonaEmpresa } from '@/types';
 import { useStore } from '@/store/useStore';
@@ -16,12 +16,15 @@ import {
   rechazarAutorizacionEmpresa,
   revocarAutorizacionEmpresa,
   solicitarAccesoEmpresa,
+  aplicarLayoutMasivo,
 } from '@/lib/autorizacionesEmpresa';
+import { generarLayoutZonas, detectarOverlaps, type EmpresaParaLayout, type ZonaGenerada, type LayoutConfig } from '@/lib/zonaLayoutEngine';
 
 interface EmpresaBasica {
   id: string;
   nombre: string;
   logo_url?: string | null;
+  miembros_count?: number;
 }
 
 interface SettingsZonaProps {
@@ -44,6 +47,15 @@ export const SettingsZona: React.FC<SettingsZonaProps> = ({ workspaceId, isAdmin
   const [guardando, setGuardando] = useState(false);
   const [mensajeError, setMensajeError] = useState<string | null>(null);
   const [mensajeExito, setMensajeExito] = useState<string | null>(null);
+
+  // === Generador dinámico de layout ===
+  const [mostrarGenerador, setMostrarGenerador] = useState(false);
+  const [algoritmoSeleccionado, setAlgoritmoSeleccionado] = useState<'radial' | 'grid' | 'organico'>('radial');
+  const [incluirZonaComun, setIncluirZonaComun] = useState(true);
+  const [worldSize, setWorldSize] = useState(800);
+  const [previewZonas, setPreviewZonas] = useState<ZonaGenerada[]>([]);
+  const [previewAlgoritmo, setPreviewAlgoritmo] = useState('');
+  const [aplicandoLayout, setAplicandoLayout] = useState(false);
 
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [editandoId, setEditandoId] = useState<string | null>(null);
@@ -107,7 +119,24 @@ export const SettingsZona: React.FC<SettingsZonaProps> = ({ workspaceId, isAdmin
         throw empresasError;
       }
 
-      setEmpresas(empresasData || []);
+      // Contar miembros por empresa para el layout proporcional
+      const { data: miembrosCount } = await supabase
+        .from('miembros_espacio')
+        .select('empresa_id')
+        .eq('espacio_id', workspaceId)
+        .not('empresa_id', 'is', null);
+
+      const conteo: Record<string, number> = {};
+      (miembrosCount || []).forEach((m: any) => {
+        if (m.empresa_id) conteo[m.empresa_id] = (conteo[m.empresa_id] || 0) + 1;
+      });
+
+      setEmpresas(
+        (empresasData || []).map((e: any) => ({
+          ...e,
+          miembros_count: conteo[e.id] || 0,
+        }))
+      );
 
       const zonasData = await cargarZonasEmpresa(workspaceId);
       setZonas(zonasData);
@@ -149,6 +178,62 @@ export const SettingsZona: React.FC<SettingsZonaProps> = ({ workspaceId, isAdmin
   const empresasDisponibles = useMemo(() => {
     return empresas.filter((empresa) => empresa.id !== empresaUsuarioId);
   }, [empresas, empresaUsuarioId]);
+
+  // === Generador dinámico: preview ===
+  const generarPreview = useCallback(() => {
+    const empresasParaLayout: EmpresaParaLayout[] = empresas.map((e) => ({
+      id: e.id,
+      nombre: e.nombre,
+      miembros_count: e.miembros_count || 1,
+      logo_url: e.logo_url,
+    }));
+
+    const resultado = generarLayoutZonas(empresasParaLayout, {
+      worldSize,
+      algoritmo: algoritmoSeleccionado,
+      incluirZonaComun,
+    });
+
+    setPreviewZonas(resultado.zonas);
+    setPreviewAlgoritmo(resultado.algoritmoUsado);
+  }, [empresas, worldSize, algoritmoSeleccionado, incluirZonaComun]);
+
+  // Auto-generar preview cuando cambian parámetros
+  useEffect(() => {
+    if (mostrarGenerador && empresas.length > 0) {
+      generarPreview();
+    }
+  }, [mostrarGenerador, generarPreview, empresas.length]);
+
+  const overlapsDetectados = useMemo(() => {
+    return detectarOverlaps(previewZonas);
+  }, [previewZonas]);
+
+  // === Generador dinámico: aplicar ===
+  const handleAplicarLayout = useCallback(async () => {
+    if (previewZonas.length === 0) return;
+    setAplicandoLayout(true);
+
+    const ok = await aplicarLayoutMasivo({
+      espacioId: workspaceId,
+      zonas: previewZonas,
+      eliminarExistentes: true,
+      usuarioId,
+      algoritmo: previewAlgoritmo,
+    });
+
+    if (ok) {
+      mostrarMensaje('exito', `Layout aplicado: ${previewZonas.length} zonas generadas (${previewAlgoritmo})`);
+      const nuevasZonas = await cargarZonasEmpresa(workspaceId);
+      setZonas(nuevasZonas);
+      setMostrarGenerador(false);
+      setPreviewZonas([]);
+    } else {
+      mostrarMensaje('error', 'Error aplicando el layout');
+    }
+
+    setAplicandoLayout(false);
+  }, [previewZonas, workspaceId, usuarioId, previewAlgoritmo]);
 
   const resetFormulario = () => {
     setFormData({
@@ -323,17 +408,27 @@ export const SettingsZona: React.FC<SettingsZonaProps> = ({ workspaceId, isAdmin
             Define los espacios privados y controla quién puede ver a tu equipo.
           </p>
         </div>
-        {!mostrarFormulario && (
-          <button
-            onClick={() => {
-              resetFormulario();
-              setMostrarFormulario(true);
-            }}
-            className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-xl text-sm font-medium transition-all"
-          >
-            <Plus className="w-4 h-4" /> Nueva zona
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {!mostrarFormulario && !mostrarGenerador && (
+            <>
+              <button
+                onClick={() => setMostrarGenerador(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-orange-500/20"
+              >
+                <Sparkles className="w-4 h-4" /> Auto-generar layout
+              </button>
+              <button
+                onClick={() => {
+                  resetFormulario();
+                  setMostrarFormulario(true);
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-xl text-sm font-medium transition-all"
+              >
+                <Plus className="w-4 h-4" /> Nueva zona
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {mensajeError && (
@@ -344,6 +439,209 @@ export const SettingsZona: React.FC<SettingsZonaProps> = ({ workspaceId, isAdmin
       {mensajeExito && (
         <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 text-sm">
           {mensajeExito}
+        </div>
+      )}
+
+      {/* ========== GENERADOR DINÁMICO DE LAYOUT ========== */}
+      {mostrarGenerador && (
+        <div className="p-5 bg-gradient-to-br from-zinc-800/80 to-zinc-900/80 border border-amber-500/20 rounded-2xl shadow-xl">
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center">
+                <Sparkles className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-white">Generador Dinámico de Layout</h4>
+                <p className="text-xs text-zinc-400">{empresas.length} empresas · Tamaño proporcional a miembros</p>
+              </div>
+            </div>
+            <button onClick={() => { setMostrarGenerador(false); setPreviewZonas([]); }} className="text-zinc-400 hover:text-white transition">
+              <XCircle className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Controles */}
+          <div className="grid grid-cols-3 gap-4 mb-5">
+            {/* Algoritmo */}
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-2">Algoritmo</label>
+              <div className="flex flex-col gap-1.5">
+                {([
+                  { id: 'radial' as const, label: 'Radial', desc: 'Anillo alrededor del centro', icon: <Circle className="w-3.5 h-3.5" /> },
+                  { id: 'grid' as const, label: 'Cuadrícula', desc: 'Grid ordenado', icon: <LayoutGrid className="w-3.5 h-3.5" /> },
+                  { id: 'organico' as const, label: 'Orgánico', desc: 'Espiral por tamaño', icon: <Hexagon className="w-3.5 h-3.5" /> },
+                ]).map((algo) => (
+                  <button
+                    key={algo.id}
+                    onClick={() => setAlgoritmoSeleccionado(algo.id)}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs transition-all ${
+                      algoritmoSeleccionado === algo.id
+                        ? 'bg-amber-500/20 border border-amber-500/40 text-amber-200'
+                        : 'bg-zinc-900/60 border border-zinc-700/40 text-zinc-400 hover:border-zinc-600'
+                    }`}
+                  >
+                    {algo.icon}
+                    <div className="text-left">
+                      <span className="font-medium">{algo.label}</span>
+                      <span className="text-[10px] text-zinc-500 ml-1">— {algo.desc}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Opciones */}
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-2">Opciones</label>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 bg-zinc-900/60 border border-zinc-700/40 rounded-lg px-3 py-2">
+                  <input
+                    type="checkbox"
+                    checked={incluirZonaComun}
+                    onChange={(e) => setIncluirZonaComun(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-zinc-600 text-amber-500"
+                  />
+                  <span className="text-xs text-zinc-300">Zona común central</span>
+                </div>
+                <div>
+                  <label className="block text-[10px] text-zinc-500 mb-1">Tamaño del mundo (px)</label>
+                  <input
+                    type="range"
+                    min={400}
+                    max={1600}
+                    step={100}
+                    value={worldSize}
+                    onChange={(e) => setWorldSize(Number(e.target.value))}
+                    className="w-full accent-amber-500"
+                  />
+                  <span className="text-xs text-zinc-400">{worldSize}px</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Info del preview */}
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-2">Resultado</label>
+              <div className="bg-zinc-900/60 border border-zinc-700/40 rounded-lg p-3 space-y-1.5">
+                <p className="text-xs text-zinc-300">
+                  <span className="text-white font-medium">{previewZonas.length}</span> zonas generadas
+                </p>
+                <p className="text-xs text-zinc-300">
+                  Algoritmo: <span className="text-amber-300 font-medium">{previewAlgoritmo || '—'}</span>
+                </p>
+                <p className="text-xs text-zinc-300">
+                  Empresas: <span className="text-white font-medium">{previewZonas.filter((z) => !z.es_comun).length}</span>
+                </p>
+                {overlapsDetectados.length > 0 && (
+                  <p className="text-xs text-amber-400">
+                    ⚠ {overlapsDetectados.length} overlap{overlapsDetectados.length > 1 ? 's' : ''} detectado{overlapsDetectados.length > 1 ? 's' : ''}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Preview 2D Canvas */}
+          {previewZonas.length > 0 && (
+            <div className="mb-5">
+              <label className="block text-xs font-medium text-zinc-400 mb-2 flex items-center gap-1.5">
+                <Eye className="w-3.5 h-3.5" /> Vista previa del layout
+              </label>
+              <div className="bg-zinc-950 border border-zinc-700/50 rounded-xl p-3 overflow-hidden">
+                <div className="relative mx-auto" style={{ width: '100%', maxWidth: 420, aspectRatio: '1/1' }}>
+                  <svg viewBox={`0 0 ${worldSize} ${worldSize}`} className="w-full h-full" style={{ background: '#0f172a' }}>
+                    {/* Grid de fondo */}
+                    <defs>
+                      <pattern id="grid-pattern" width={worldSize / 10} height={worldSize / 10} patternUnits="userSpaceOnUse">
+                        <path d={`M ${worldSize / 10} 0 L 0 0 0 ${worldSize / 10}`} fill="none" stroke="#1e293b" strokeWidth="0.5" />
+                      </pattern>
+                    </defs>
+                    <rect width={worldSize} height={worldSize} fill="url(#grid-pattern)" />
+
+                    {/* Zonas */}
+                    {previewZonas.map((zona, i) => {
+                      const x = zona.posicion_x - zona.ancho / 2;
+                      const y = zona.posicion_y - zona.alto / 2;
+                      return (
+                        <g key={i}>
+                          <rect
+                            x={x}
+                            y={y}
+                            width={zona.ancho}
+                            height={zona.alto}
+                            fill={zona.color}
+                            fillOpacity={zona.es_comun ? 0.25 : 0.35}
+                            stroke={zona.color}
+                            strokeWidth={zona.es_comun ? 2 : 1.5}
+                            strokeOpacity={0.7}
+                            rx={4}
+                          />
+                          <text
+                            x={zona.posicion_x}
+                            y={zona.posicion_y - 4}
+                            fill="white"
+                            fontSize={Math.max(10, Math.min(16, zona.ancho / 10))}
+                            textAnchor="middle"
+                            dominantBaseline="middle"
+                            opacity={0.9}
+                          >
+                            {zona.nombre_zona.length > 12 ? zona.nombre_zona.slice(0, 11) + '…' : zona.nombre_zona}
+                          </text>
+                          <text
+                            x={zona.posicion_x}
+                            y={zona.posicion_y + 14}
+                            fill={zona.color}
+                            fontSize={Math.max(8, Math.min(11, zona.ancho / 14))}
+                            textAnchor="middle"
+                            dominantBaseline="middle"
+                            opacity={0.7}
+                          >
+                            {zona.ancho}×{zona.alto}
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Acciones */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={generarPreview}
+                className="flex items-center gap-2 px-3 py-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg text-xs font-medium transition"
+              >
+                <RefreshCw className="w-3.5 h-3.5" /> Regenerar
+              </button>
+              {zonas.length > 0 && (
+                <span className="text-[10px] text-amber-400 flex items-center gap-1">
+                  <Trash2 className="w-3 h-3" /> Aplicar reemplazará las {zonas.length} zonas actuales
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { setMostrarGenerador(false); setPreviewZonas([]); }}
+                className="px-4 py-2 rounded-lg text-sm text-zinc-400 hover:text-white transition"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleAplicarLayout}
+                disabled={aplicandoLayout || previewZonas.length === 0}
+                className="flex items-center gap-2 px-5 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white rounded-lg text-sm font-medium transition-all shadow-lg shadow-orange-500/20 disabled:opacity-50"
+              >
+                {aplicandoLayout ? (
+                  <><RefreshCw className="w-4 h-4 animate-spin" /> Aplicando...</>
+                ) : (
+                  <><Sparkles className="w-4 h-4" /> Aplicar layout ({previewZonas.length} zonas)</>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

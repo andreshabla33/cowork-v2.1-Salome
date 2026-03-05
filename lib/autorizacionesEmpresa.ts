@@ -160,6 +160,86 @@ export const guardarZonaEmpresa = async (payload: {
   return (data as ZonaEmpresa) || null;
 };
 
+export const aplicarLayoutMasivo = async (payload: {
+  espacioId: string;
+  zonas: Array<{
+    empresa_id: string | null;
+    nombre_zona: string;
+    posicion_x: number;
+    posicion_y: number;
+    ancho: number;
+    alto: number;
+    color: string;
+    es_comun: boolean;
+    spawn_x: number;
+    spawn_y: number;
+  }>;
+  eliminarExistentes?: boolean;
+  usuarioId?: string | null;
+  algoritmo?: string;
+}): Promise<boolean> => {
+  try {
+    // Si se pide, eliminar zonas existentes del espacio
+    if (payload.eliminarExistentes) {
+      const { error: delError } = await supabase
+        .from('zonas_empresa')
+        .delete()
+        .eq('espacio_id', payload.espacioId);
+
+      if (delError) {
+        console.warn('Error eliminando zonas existentes:', delError.message);
+        return false;
+      }
+    }
+
+    // Insertar todas las zonas nuevas en batch
+    const filas = payload.zonas.map((zona) => ({
+      espacio_id: payload.espacioId,
+      empresa_id: zona.empresa_id,
+      nombre_zona: zona.nombre_zona,
+      posicion_x: zona.posicion_x,
+      posicion_y: zona.posicion_y,
+      ancho: zona.ancho,
+      alto: zona.alto,
+      color: zona.color,
+      estado: 'activa' as const,
+      es_comun: zona.es_comun,
+      spawn_x: zona.spawn_x,
+      spawn_y: zona.spawn_y,
+      actualizado_en: new Date().toISOString(),
+    }));
+
+    const { error: insertError } = await supabase
+      .from('zonas_empresa')
+      .insert(filas);
+
+    if (insertError) {
+      console.warn('Error insertando zonas masivas:', insertError.message);
+      return false;
+    }
+
+    await registrarActividad({
+      usuario_id: payload.usuarioId ?? null,
+      empresa_id: null,
+      espacio_id: payload.espacioId,
+      accion: 'layout_zonas_generado',
+      entidad: 'zonas_empresa',
+      descripcion: `Layout automático generado: ${payload.zonas.length} zonas (algoritmo: ${payload.algoritmo || 'auto'})`,
+      datos_extra: {
+        total_zonas: payload.zonas.length,
+        algoritmo: payload.algoritmo,
+        empresas_count: payload.zonas.filter((z) => !z.es_comun).length,
+        zona_comun: payload.zonas.some((z) => z.es_comun),
+      },
+    });
+
+    return true;
+  } catch (error: any) {
+    console.error('Error en aplicarLayoutMasivo:', error);
+    return false;
+  }
+};
+
 export const cargarSolicitudesPendientes = async (
   espacioId: string,
   empresaDestinoId: string
