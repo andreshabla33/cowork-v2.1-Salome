@@ -410,19 +410,17 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
     const cacheKey = avatarId || '_default_';
     if (cacheKey === currentAvatarIdRef.current) return;
 
+    // GLB all-in-one: si el modelo tiene 2+ animaciones embebidas, NO cargar de BD.
+    // CHECK SINCRÓNICO — fuera de la función async para evitar closure stale de baseAnimations.
+    if (baseAnimations.length > 1 && (!avatarConfig?.animaciones || avatarConfig.animaciones.length === 0)) {
+      currentAvatarIdRef.current = cacheKey;
+      console.log(`🎬 ${avatarConfig?.nombre || 'avatar'}: GLB all-in-one (${baseAnimations.length} anims embebidas) — skip BD`);
+      return;
+    }
+
     // Intentar usar animaciones del config, sino cargar de BD
     const loadAnimations = async () => {
       let animaciones = avatarConfig?.animaciones;
-
-      // Si el GLB ya tiene múltiples animaciones embebidas → usarlas directamente, sin BD
-      // Esto aplica a avatares all-in-one (ej: Ren_Final.glb con idle/run/walk embebidas)
-      if (!animaciones || animaciones.length === 0) {
-        if (baseAnimations.length > 1) {
-          currentAvatarIdRef.current = cacheKey;
-          console.log(`🎬 ${avatarConfig?.nombre || 'avatar'}: GLB all-in-one (${baseAnimations.length} anims embebidas) — skip BD`);
-          return;
-        }
-      }
 
       // Si el config no trae animaciones, cargarlas de BD
       if (!animaciones || animaciones.length === 0) {
