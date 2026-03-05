@@ -406,15 +406,19 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
     if (avatarId === 'default') return;
 
     // Si ya cargamos (o decidimos skip BD) para este avatar, no re-cargar.
-    // Para GLBs all-in-one, loadedAnimClips queda vacío pero currentAvatarIdRef ya está set.
     const cacheKey = avatarId || '_default_';
     if (cacheKey === currentAvatarIdRef.current) return;
 
+    // Esperar a que el modelo base esté cargado para saber cuántas animaciones embebidas tiene.
+    // Si todavía no hay animaciones base pero el modelo se supone que las tiene, podríamos estar en un render intermedio.
+    // Como las animaciones embebidas vienen junto con scene y nodes, si clone ya existe, baseAnimations es el definitivo.
+    
     // GLB all-in-one: si el modelo tiene 2+ animaciones embebidas, NO cargar de BD.
-    // CHECK SINCRÓNICO — fuera de la función async para evitar closure stale de baseAnimations.
-    if (baseAnimations.length > 1 && (!avatarConfig?.animaciones || avatarConfig.animaciones.length === 0)) {
+    if (baseAnimations.length > 1) {
       currentAvatarIdRef.current = cacheKey;
       console.log(`🎬 ${avatarConfig?.nombre || 'avatar'}: GLB all-in-one (${baseAnimations.length} anims embebidas) — skip BD`);
+      // IMPORTANTE: Aseguramos que loadedAnimClips esté vacío para que allAnimations use el Branch A
+      setLoadedAnimClips({});
       return;
     }
 
