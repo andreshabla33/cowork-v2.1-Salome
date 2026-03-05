@@ -9,6 +9,7 @@ import { WorkspaceLayout } from './components/WorkspaceLayout';
 import { CargoSelector } from './components/onboarding/CargoSelector';
 import { OnboardingCreador } from './components/onboarding/OnboardingCreador';
 import { MeetingLobby, MeetingRoom } from './components/meetings/videocall';
+import { ExploradorPublico3D } from './components/marketplace/ExploradorPublico3D';
 import type { CargoLaboral, CargoDB } from './components/onboarding/CargoSelector';
 
 const ESPACIO_GLOBAL_ID = '91887e81-1f26-448c-9d6d-9839e7d83b5d';
@@ -92,6 +93,11 @@ const App: React.FC = () => {
       }
     }
   }, []);
+
+  // Ruta pública: /explorar — Marketplace de terrenos virtuales (sin auth)
+  if (window.location.pathname === '/explorar') {
+    return <ExploradorPublico3D />;
+  }
 
   // Si hay token de videollamada, mostrar lobby o sala (no requiere sesión)
   if (meetingToken && !inMeeting) {

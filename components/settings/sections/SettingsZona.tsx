@@ -401,34 +401,32 @@ export const SettingsZona: React.FC<SettingsZonaProps> = ({ workspaceId, isAdmin
 
   return (
     <div className="space-y-10">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
           <h3 className="text-xl font-bold text-white">Zonas de Empresa</h3>
           <p className="text-sm text-zinc-400 mt-1">
             Define los espacios privados y controla quién puede ver a tu equipo.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {!mostrarFormulario && !mostrarGenerador && (
-            <>
-              <button
-                onClick={() => setMostrarGenerador(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-orange-500/20"
-              >
-                <Sparkles className="w-4 h-4" /> Auto-generar layout
-              </button>
-              <button
-                onClick={() => {
-                  resetFormulario();
-                  setMostrarFormulario(true);
-                }}
-                className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-xl text-sm font-medium transition-all"
-              >
-                <Plus className="w-4 h-4" /> Nueva zona
-              </button>
-            </>
-          )}
-        </div>
+        {!mostrarFormulario && !mostrarGenerador && (
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
+            <button
+              onClick={() => setMostrarGenerador(true)}
+              className="flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-orange-500/20"
+            >
+              <Sparkles className="w-4 h-4" /> Auto-generar
+            </button>
+            <button
+              onClick={() => {
+                resetFormulario();
+                setMostrarFormulario(true);
+              }}
+              className="flex items-center justify-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-xl text-sm font-medium transition-all"
+            >
+              <Plus className="w-4 h-4" /> Nueva zona
+            </button>
+          </div>
+        )}
       </div>
 
       {mensajeError && (

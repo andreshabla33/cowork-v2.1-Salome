@@ -109,6 +109,37 @@ export interface ZonaEmpresa {
   } | null;
 }
 
+export interface TerrenoMarketplace {
+  id: string;
+  espacio_id: string;
+  nombre: string;
+  descripcion?: string | null;
+  posicion_x: number;
+  posicion_y: number;
+  ancho: number;
+  alto: number;
+  tier: 'starter' | 'professional' | 'enterprise';
+  precio_mensual: number;
+  precio_anual: number;
+  moneda: string;
+  estado: 'disponible' | 'reservado' | 'vendido' | 'bloqueado';
+  reservado_por?: string | null;
+  reservado_hasta?: string | null;
+  comprado_por_empresa?: string | null;
+  color_preview: string;
+  destacado: boolean;
+  orden_visual: number;
+  features: {
+    max_miembros: number;
+    salas_reunion: number;
+    personalizacion: string;
+    showroom: boolean;
+    soporte: string;
+  };
+  created_at: string;
+  updated_at: string;
+}
+
 export interface AutorizacionEmpresa {
   id: string;
   empresa_origen_id: string;

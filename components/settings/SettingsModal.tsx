@@ -21,8 +21,9 @@ import { SettingsCargos } from './sections/SettingsCargos';
 import { SettingsDepartamentos } from './sections/SettingsDepartamentos';
 import { SettingsEmpresa } from './sections/SettingsEmpresa';
 import { SettingsZona } from './sections/SettingsZona';
+import { SettingsTerrenos } from './sections/SettingsTerrenos';
 
-type SettingsTab = 'general' | 'calendar' | 'minimode' | 'audio' | 'video' | 'meetings' | 'notifications' | 'privacy' | 'performance' | 'space3d' | 'members' | 'guests' | 'security' | 'cargos' | 'departamentos' | 'empresa' | 'zonas';
+type SettingsTab = 'general' | 'calendar' | 'minimode' | 'audio' | 'video' | 'meetings' | 'notifications' | 'privacy' | 'performance' | 'space3d' | 'members' | 'guests' | 'security' | 'cargos' | 'departamentos' | 'empresa' | 'zonas' | 'terrenos';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -231,6 +232,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     { id: 'security', label: t('settings.security.title', currentLang), Icon: ShieldCheck, category: t('settings.category.workspace', currentLang), adminOnly: true },
     { id: 'empresa', label: 'Empresa', Icon: Settings, category: t('settings.category.workspace', currentLang), adminOnly: true },
     { id: 'zonas', label: 'Zonas y Accesos', Icon: ShieldCheck, category: t('settings.category.workspace', currentLang), adminOnly: true },
+    { id: 'terrenos', label: 'Marketplace', Icon: ShieldCheck, category: t('settings.category.workspace', currentLang), adminOnly: true },
     { id: 'cargos', label: 'Cargos', Icon: ShieldCheck, category: t('settings.category.workspace', currentLang), adminOnly: true },
     { id: 'departamentos', label: 'Departamentos', Icon: Users2, category: t('settings.category.workspace', currentLang), adminOnly: true },
   ];
@@ -398,6 +400,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             )}
             {activeTab === 'zonas' && isAdmin && (
               <SettingsZona
+                workspaceId={workspaceId}
+                isAdmin={isAdmin}
+              />
+            )}
+            {activeTab === 'terrenos' && isAdmin && (
+              <SettingsTerrenos
                 workspaceId={workspaceId}
                 isAdmin={isAdmin}
               />
