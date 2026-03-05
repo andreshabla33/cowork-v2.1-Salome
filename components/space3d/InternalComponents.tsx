@@ -1637,7 +1637,12 @@ export const Scene: React.FC<SceneProps> = ({ currentUser, onlineUsers, setPosit
       )}
       
       {/* Piso importado desde Blender (Estilo Riot Games: Malla estática pura con texturas) */}
-      <primitive object={terrainScene} receiveShadow />
+      <group position={[-25, -0.02, 75]}>
+        <primitive 
+          object={terrainScene} 
+          receiveShadow 
+        />
+      </group>
 
       {/* Suelo base invisible para Raycast (eventos de clic/tap) — Restaurado para mantener estabilidad de colisiones y coordenadas */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]}
