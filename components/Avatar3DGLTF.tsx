@@ -405,9 +405,10 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
     let avatarId = avatarConfig?.id;
     if (avatarId === 'default') return;
 
-    // Si ya cargamos para este avatar, no re-cargar
+    // Si ya cargamos (o decidimos skip BD) para este avatar, no re-cargar.
+    // Para GLBs all-in-one, loadedAnimClips queda vacío pero currentAvatarIdRef ya está set.
     const cacheKey = avatarId || '_default_';
-    if (cacheKey === currentAvatarIdRef.current && Object.keys(loadedAnimClips).length > 0) return;
+    if (cacheKey === currentAvatarIdRef.current) return;
 
     // Intentar usar animaciones del config, sino cargar de BD
     const loadAnimations = async () => {
