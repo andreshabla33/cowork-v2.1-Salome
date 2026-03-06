@@ -14,7 +14,7 @@ import { HUDMarketplace } from './HUDMarketplace';
 
 const ESPACIO_GLOBAL_ID = '91887e81-1f26-448c-9d6d-9839e7d83b5d';
 const WORLD_SCALE = 0.02;
-const WORLD_SIZE_PX = 800;
+const WORLD_SIZE_PX = 2000;
 const WORLD_CENTER = (WORLD_SIZE_PX * WORLD_SCALE) / 2;
 
 /**
@@ -182,12 +182,12 @@ const EscenaMarketplace: React.FC<{
       <directionalLight position={[-5, 10, -5]} intensity={0.3} />
 
       {/* Cielo/ambiente */}
-      <fog attach="fog" args={['#0a0a1a', 15, 40]} />
+      <fog attach="fog" args={['#0a0a1a', 30, 80]} />
       <color attach="background" args={['#0a0a1a']} />
 
       {/* Grid del suelo */}
       <Grid
-        args={[30, 30]}
+        args={[60, 60]}
         position={[WORLD_CENTER, -0.01, WORLD_CENTER]}
         cellSize={1}
         cellThickness={0.5}
@@ -195,15 +195,45 @@ const EscenaMarketplace: React.FC<{
         sectionSize={5}
         sectionThickness={1}
         sectionColor="#334155"
-        fadeDistance={25}
+        fadeDistance={50}
         infiniteGrid
       />
 
       {/* Suelo receptor de sombras */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[WORLD_CENTER, -0.02, WORLD_CENTER]} receiveShadow>
-        <planeGeometry args={[40, 40]} />
+        <planeGeometry args={[80, 80]} />
         <meshStandardMaterial color="#0f172a" transparent opacity={0.8} />
       </mesh>
+
+      {/* Separador visual: línea entre zonas y terrenos */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[940 * WORLD_SCALE, 0.005, WORLD_CENTER]}>
+        <planeGeometry args={[0.04, 40]} />
+        <meshStandardMaterial color="#334155" transparent opacity={0.5} />
+      </mesh>
+
+      {/* Labels de sección */}
+      <Text
+        position={[490 * WORLD_SCALE, 0.3, 50 * WORLD_SCALE]}
+        fontSize={0.4}
+        color="#475569"
+        anchorX="center"
+        anchorY="middle"
+        outlineWidth={0.01}
+        outlineColor="#000000"
+      >
+        EMPRESAS
+      </Text>
+      <Text
+        position={[1400 * WORLD_SCALE, 0.3, 50 * WORLD_SCALE]}
+        fontSize={0.4}
+        color="#475569"
+        anchorX="center"
+        anchorY="middle"
+        outlineWidth={0.01}
+        outlineColor="#000000"
+      >
+        TERRENOS DISPONIBLES
+      </Text>
 
       {/* Zonas de empresas existentes — con objetos reales + GhostAvatars */}
       {zonas.map((zona) => (
@@ -232,13 +262,13 @@ const EscenaMarketplace: React.FC<{
         enablePan
         enableZoom
         enableRotate
-        minDistance={3}
-        maxDistance={30}
+        minDistance={5}
+        maxDistance={60}
         maxPolarAngle={Math.PI / 2.2}
         minPolarAngle={0.2}
         target={[WORLD_CENTER, 0, WORLD_CENTER]}
         autoRotate
-        autoRotateSpeed={0.3}
+        autoRotateSpeed={0.2}
       />
     </>
   );
@@ -326,10 +356,10 @@ export const ExploradorPublico3D: React.FC = () => {
       {/* Canvas 3D */}
       <Canvas
         camera={{
-          position: [WORLD_CENTER + 8, 10, WORLD_CENTER + 8],
+          position: [WORLD_CENTER + 15, 18, WORLD_CENTER + 15],
           fov: 50,
           near: 0.1,
-          far: 100,
+          far: 200,
         }}
         shadows
         dpr={[1, 1.5]}
