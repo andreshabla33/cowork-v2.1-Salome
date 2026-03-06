@@ -10,7 +10,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 // Adapted from: github.com/andreshabla33/mediapipe3D
 // ═══════════════════════════════════════════════════════════════════
 
-export type GestureType = 'pinch_drag' | 'pinch_zoom' | 'open' | 'fist' | 'two_hands' | 'none';
+export type GestureType = 'pinch_drag' | 'pinch_zoom' | 'tap' | 'open' | 'fist' | 'two_hands' | 'none';
 
 export interface GestureData {
   x: number;
@@ -19,10 +19,13 @@ export interface GestureData {
   handedness: 'left' | 'right';
   deltaX: number;
   deltaY: number;
+  indexX: number;
+  indexY: number;
 }
 
 interface HandControllerProps {
   onGesture: (gesture: GestureType, data: GestureData) => void;
+  onPointerMove?: (x: number, y: number) => void;
   enabled?: boolean;
 }
 
@@ -82,7 +85,10 @@ const DRAG_THRESHOLD = 0.008;
 const ZOOM_THRESHOLD = 0.012;
 const THROTTLE_MS = 50;
 
-export function HandController({ onGesture, enabled = true }: HandControllerProps) {
+const TAP_MAX_DURATION_MS = 400;
+const TAP_MAX_MOVEMENT = 0.015;
+
+export function HandController({ onGesture, onPointerMove, enabled = true }: HandControllerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>(0);
@@ -103,6 +109,10 @@ export function HandController({ onGesture, enabled = true }: HandControllerProp
   const prevDistRef = useRef<number>(0);
   const accumZoomRef = useRef<number>(0);
   const accumMoveRef = useRef<number>(0);
+  const pinchStartTimeRef = useRef<number>(0);
+  const pinchStartPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const onPointerMoveRef = useRef(onPointerMove);
+  onPointerMoveRef.current = onPointerMove;
 
   const [handDetected, setHandDetected] = useState(false);
   const [activeGesture, setActiveGesture] = useState<string>('');
@@ -236,7 +246,7 @@ export function HandController({ onGesture, enabled = true }: HandControllerProp
               resetFilters();
             }
             if (lastGestureRef.current !== 'none') {
-              emitGesture('none', { x: 0.5, y: 0.5, pinchDistance: 0, handedness: 'right', deltaX: 0, deltaY: 0 });
+              emitGesture('none', { x: 0.5, y: 0.5, pinchDistance: 0, handedness: 'right', deltaX: 0, deltaY: 0, indexX: 0.5, indexY: 0.5 });
             }
             return;
           }
@@ -253,7 +263,7 @@ export function HandController({ onGesture, enabled = true }: HandControllerProp
             if (open1 && open2) {
               if (transitionTo('two_hands')) {
                 setActiveGesture('Pantalla completa');
-                emitGesture('two_hands', { x: 0.5, y: 0.5, pinchDistance: 0, handedness: 'right', deltaX: 0, deltaY: 0 });
+                emitGesture('two_hands', { x: 0.5, y: 0.5, pinchDistance: 0, handedness: 'right', deltaX: 0, deltaY: 0, indexX: 0.5, indexY: 0.5 });
               }
               return;
             }
@@ -277,6 +287,12 @@ export function HandController({ onGesture, enabled = true }: HandControllerProp
 
           const isPinching = sd < PINCH_THRESHOLD;
 
+          // Emitir posición del índice continuamente (para cursor)
+          const indexTip = lm[8];
+          if (onPointerMoveRef.current) {
+            onPointerMoveRef.current(1 - indexTip.x, indexTip.y);
+          }
+
           drawHand(ctx, lm, canvas.width, canvas.height, stateRef.current);
 
           if (isPinching) {
@@ -285,6 +301,9 @@ export function HandController({ onGesture, enabled = true }: HandControllerProp
                 prevPosRef.current = { x: sx, y: sy };
                 prevDistRef.current = sd;
                 accumZoomRef.current = 0;
+                accumMoveRef.current = 0;
+                pinchStartTimeRef.current = Date.now();
+                pinchStartPosRef.current = { x: sx, y: sy };
                 setActiveGesture('Pellizco');
               }
             } else if (prevPosRef.current) {
@@ -298,7 +317,7 @@ export function HandController({ onGesture, enabled = true }: HandControllerProp
                 setActiveGesture('Rotando');
                 emitGesture('pinch_drag', {
                   x: sx, y: sy, pinchDistance: sd, handedness: 'right',
-                  deltaX: dx, deltaY: dy
+                  deltaX: dx, deltaY: dy, indexX: 1 - indexTip.x, indexY: indexTip.y
                 });
                 accumZoomRef.current = 0;
                 accumMoveRef.current = 0;
@@ -306,7 +325,7 @@ export function HandController({ onGesture, enabled = true }: HandControllerProp
                 setActiveGesture('Zoom');
                 emitGesture('pinch_zoom', {
                   x: sx, y: sy, pinchDistance: sd, handedness: 'right',
-                  deltaX: 0, deltaY: accumZoomRef.current
+                  deltaX: 0, deltaY: accumZoomRef.current, indexX: 1 - indexTip.x, indexY: indexTip.y
                 });
                 accumZoomRef.current = 0;
                 accumMoveRef.current = 0;
@@ -319,7 +338,7 @@ export function HandController({ onGesture, enabled = true }: HandControllerProp
                     setActiveGesture('Rotando');
                     emitGesture('pinch_drag', {
                       x: sx, y: sy, pinchDistance: sd, handedness: 'right',
-                      deltaX: dx, deltaY: dy
+                      deltaX: dx, deltaY: dy, indexX: 1 - indexTip.x, indexY: indexTip.y
                     });
                     accumZoomRef.current = 0;
                     accumMoveRef.current = 0;
@@ -329,7 +348,7 @@ export function HandController({ onGesture, enabled = true }: HandControllerProp
                     setActiveGesture('Zoom');
                     emitGesture('pinch_zoom', {
                       x: sx, y: sy, pinchDistance: sd, handedness: 'right',
-                      deltaX: 0, deltaY: accumZoomRef.current
+                      deltaX: 0, deltaY: accumZoomRef.current, indexX: 1 - indexTip.x, indexY: indexTip.y
                     });
                     accumZoomRef.current = 0;
                     accumMoveRef.current = 0;
@@ -340,13 +359,36 @@ export function HandController({ onGesture, enabled = true }: HandControllerProp
               prevPosRef.current = { x: sx, y: sy };
               prevDistRef.current = sd;
             }
+          } else if (stateRef.current === 'pinching') {
+            // Pinch released while still in 'pinching' (no drag/zoom started) = TAP
+            const elapsed = Date.now() - pinchStartTimeRef.current;
+            const totalMove = Math.sqrt(
+              (sx - pinchStartPosRef.current.x) ** 2 +
+              (sy - pinchStartPosRef.current.y) ** 2
+            );
+            if (elapsed < TAP_MAX_DURATION_MS && totalMove < TAP_MAX_MOVEMENT) {
+              stateRef.current = 'idle';
+              resetFilters();
+              setActiveGesture('Seleccionar');
+              const tapData: GestureData = {
+                x: sx, y: sy, pinchDistance: sd, handedness: 'right',
+                deltaX: 0, deltaY: 0,
+                indexX: 1 - indexTip.x, indexY: indexTip.y,
+              };
+              onGestureRef.current('tap', tapData);
+              lastGestureRef.current = 'tap';
+              lastEmitRef.current = Date.now();
+            } else {
+              stateRef.current = 'idle';
+              resetFilters();
+            }
           } else if (stateRef.current === 'dragging' || stateRef.current === 'zooming') {
             const exitTarget = openCount >= 4 ? 'open_hand' as GestureState : 'fist_hand' as GestureState;
             if (!transitionTo(exitTarget)) {
               if (stateRef.current === 'dragging') {
                 emitGesture('pinch_drag', {
                   x: sx, y: sy, pinchDistance: sd, handedness: 'right',
-                  deltaX: 0, deltaY: 0
+                  deltaX: 0, deltaY: 0, indexX: 1 - indexTip.x, indexY: indexTip.y
                 });
               }
             } else {
@@ -354,7 +396,7 @@ export function HandController({ onGesture, enabled = true }: HandControllerProp
               setActiveGesture(exitTarget === 'open_hand' ? 'Soltar' : 'Pausa');
               emitGesture(exitTarget === 'open_hand' ? 'open' : 'fist', {
                 x: palmCenter.x, y: palmCenter.y, pinchDistance: pinchDistRaw,
-                handedness: 'right', deltaX: 0, deltaY: 0
+                handedness: 'right', deltaX: 0, deltaY: 0, indexX: 1 - indexTip.x, indexY: indexTip.y
               });
             }
           } else if (openCount >= 4) {
@@ -363,7 +405,7 @@ export function HandController({ onGesture, enabled = true }: HandControllerProp
               setActiveGesture('Soltar');
               emitGesture('open', {
                 x: palmCenter.x, y: palmCenter.y, pinchDistance: pinchDistRaw,
-                handedness: 'right', deltaX: 0, deltaY: 0
+                handedness: 'right', deltaX: 0, deltaY: 0, indexX: 1 - indexTip.x, indexY: indexTip.y
               });
             }
           } else {
@@ -372,7 +414,7 @@ export function HandController({ onGesture, enabled = true }: HandControllerProp
               setActiveGesture('Pausa');
               emitGesture('fist', {
                 x: palmCenter.x, y: palmCenter.y, pinchDistance: pinchDistRaw,
-                handedness: 'right', deltaX: 0, deltaY: 0
+                handedness: 'right', deltaX: 0, deltaY: 0, indexX: 1 - indexTip.x, indexY: indexTip.y
               });
             }
           }

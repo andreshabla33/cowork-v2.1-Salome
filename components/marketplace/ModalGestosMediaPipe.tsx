@@ -14,19 +14,22 @@ interface ModalGestosMediaPipeProps {
   abierto: boolean;
   onCerrar: () => void;
   onGesture: (gesture: GestureType, data: GestureData) => void;
+  onPointerMove?: (x: number, y: number) => void;
 }
 
 const TOUR_STEPS = [
   { icon: '📷', titulo: 'Tu cámara', desc: 'La cámara detecta tus manos en tiempo real. Asegúrate de tener buena iluminación.' },
   { icon: '🤏', titulo: 'Pellizco + Mover = Rotar', desc: 'Junta pulgar e índice y mueve la mano para rotar el espacio virtual.' },
   { icon: '🔍', titulo: 'Pellizco Quieto = Zoom', desc: 'Mantén el pellizco quieto y acerca o aleja los dedos para hacer zoom.' },
-  { icon: '🖐️', titulo: 'Mano Abierta = Soltar', desc: 'Abre la mano para soltar y detener el movimiento.' },
+  { icon: '�', titulo: 'Pellizco Rápido = Seleccionar', desc: 'Haz un pellizco rápido (sin mover la mano) sobre una zona o terreno para seleccionarlo.' },
+  { icon: '�🖐️', titulo: 'Mano Abierta = Soltar', desc: 'Abre la mano para soltar y detener el movimiento.' },
   { icon: '🙌', titulo: 'Dos Manos Abiertas', desc: 'Muestra dos manos abiertas para maximizar la vista.' },
 ];
 
 const GESTURE_LABELS: Record<GestureType, { emoji: string; text: string; color: string }> = {
   'pinch_drag': { emoji: '🤏', text: 'Rotando', color: 'bg-orange-500/20 text-orange-300 border-orange-500/40' },
   'pinch_zoom': { emoji: '🔍', text: 'Zoom', color: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40' },
+  'tap': { emoji: '👆', text: 'Seleccionar', color: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' },
   'open': { emoji: '🖐️', text: 'Soltando', color: 'bg-green-500/20 text-green-300 border-green-500/40' },
   'fist': { emoji: '✊', text: 'Pausa', color: 'bg-zinc-500/20 text-zinc-300 border-zinc-500/40' },
   'two_hands': { emoji: '🙌', text: 'Fullscreen', color: 'bg-purple-500/20 text-purple-300 border-purple-500/40' },
@@ -37,6 +40,7 @@ export const ModalGestosMediaPipe: React.FC<ModalGestosMediaPipeProps> = ({
   abierto,
   onCerrar,
   onGesture,
+  onPointerMove,
 }) => {
   const [currentGesture, setCurrentGesture] = useState<GestureType>('none');
   const [mostrarTour, setMostrarTour] = useState(false);
@@ -100,6 +104,7 @@ export const ModalGestosMediaPipe: React.FC<ModalGestosMediaPipeProps> = ({
           <div className="w-px h-4 bg-white/10 mx-1" />
           <span className="text-[9px] text-white/40">🤏 Rotar</span>
           <span className="text-[9px] text-white/40">🔍 Zoom</span>
+          <span className="text-[9px] text-white/40">👆 Clic</span>
           <span className="text-[9px] text-white/40">🖐️ Soltar</span>
           <div className="w-px h-4 bg-white/10 mx-1" />
           <button
@@ -124,7 +129,7 @@ export const ModalGestosMediaPipe: React.FC<ModalGestosMediaPipeProps> = ({
       </div>
 
       {/* ── HandController (camera feed widget, bottom-right) ── */}
-      <HandController onGesture={handleGesture} enabled={true} />
+      <HandController onGesture={handleGesture} onPointerMove={onPointerMove} enabled={true} />
 
       {/* ── Tour onboarding (solo primera vez, con backdrop) ── */}
       {mostrarTour && (

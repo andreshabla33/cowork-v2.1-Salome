@@ -68,7 +68,7 @@ export const TerrenoDisponible3D: React.FC<TerrenoDisponible3DProps> = ({
     : 'Consultar';
 
   return (
-    <group position={[posX, 0, posZ]}>
+    <group position={[posX, 0, posZ]} userData={{ tipo: 'terreno', terrenoId: terreno.id }}>
       {/* Suelo del terreno */}
       <mesh
         ref={meshRef}
@@ -80,6 +80,7 @@ export const TerrenoDisponible3D: React.FC<TerrenoDisponible3DProps> = ({
         }}
         onPointerOver={() => { document.body.style.cursor = 'pointer'; }}
         onPointerOut={() => { document.body.style.cursor = 'default'; }}
+        userData={{ tipo: 'terreno', terrenoId: terreno.id }}
       >
         <planeGeometry args={[anchoWorld, altoWorld]} />
         <meshStandardMaterial

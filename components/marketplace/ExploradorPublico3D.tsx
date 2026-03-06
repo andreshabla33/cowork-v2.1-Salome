@@ -41,7 +41,7 @@ const ZonaExistente3D: React.FC<{
   const edificioH = esComun ? 0.8 : 0.5 + Math.min(miembros * 0.15, 2.5);
 
   return (
-    <group position={[posX, 0, posZ]}>
+    <group position={[posX, 0, posZ]} userData={{ tipo: 'zona', zonaId: zona.id }}>
       {/* Suelo clickeable */}
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
@@ -49,6 +49,7 @@ const ZonaExistente3D: React.FC<{
         onClick={(e) => { e.stopPropagation(); onClick?.(zona); }}
         onPointerOver={() => { document.body.style.cursor = 'pointer'; }}
         onPointerOut={() => { document.body.style.cursor = 'default'; }}
+        userData={{ tipo: 'zona', zonaId: zona.id }}
       >
         <planeGeometry args={[anchoW, altoW]} />
         <meshStandardMaterial
@@ -158,6 +159,133 @@ const ZonaExistente3D: React.FC<{
 };
 
 /**
+ * Cursor 3D controlado por el dedo índice (modelo Apple Vision Pro: apuntar + pellizco = seleccionar)
+ * - Proyecta un rayo desde la cámara usando la posición del índice en pantalla
+ * - Muestra un reticle donde el rayo toca el suelo
+ * - Al recibir 'gesture-tap' → raycasting para detectar qué zona/terreno está bajo el cursor
+ */
+const CursorGesto3D: React.FC<{
+  pointerRef: React.MutableRefObject<{ x: number; y: number }>;
+  modalActivo: boolean;
+  zonas: ZonaEmpresa[];
+  terrenos: TerrenoMarketplace[];
+  onClickZona: (z: ZonaEmpresa) => void;
+  onClickTerreno: (t: TerrenoMarketplace) => void;
+}> = ({ pointerRef, modalActivo, zonas, terrenos, onClickZona, onClickTerreno }) => {
+  const { camera, scene, raycaster } = useThree();
+  const cursorRef = useRef<THREE.Mesh>(null);
+  const ringRef = useRef<THREE.Mesh>(null);
+  const prevHitRef = useRef<string | null>(null);
+
+  // Raycasting helper: busca zonas/terrenos bajo un punto NDC
+  const raycastAt = useCallback((ndcX: number, ndcY: number) => {
+    const ndc = new THREE.Vector2(ndcX * 2 - 1, -(ndcY * 2 - 1));
+    raycaster.setFromCamera(ndc, camera);
+    const hits = raycaster.intersectObjects(scene.children, true);
+    for (const hit of hits) {
+      let obj: THREE.Object3D | null = hit.object;
+      while (obj) {
+        const ud = (obj as any).userData;
+        if (ud?.tipo === 'zona' && ud?.zonaId) {
+          const z = zonas.find(z => z.id === ud.zonaId);
+          if (z) return { type: 'zona' as const, zona: z, point: hit.point };
+        }
+        if (ud?.tipo === 'terreno' && ud?.terrenoId) {
+          const t = terrenos.find(t => t.id === ud.terrenoId);
+          if (t) return { type: 'terreno' as const, terreno: t, point: hit.point };
+        }
+        obj = obj.parent;
+      }
+    }
+    // Fallback: intersect ground plane
+    const groundHits = hits.filter(h => h.object.userData?.isGround);
+    if (groundHits.length > 0) return { type: 'ground' as const, point: groundHits[0].point };
+    return null;
+  }, [camera, scene, raycaster, zonas, terrenos]);
+
+  // Listener para tap (selección por gesto)
+  useEffect(() => {
+    if (!modalActivo) return;
+    const handler = (e: Event) => {
+      const { x, y } = (e as CustomEvent).detail;
+      const hit = raycastAt(x, y);
+      if (hit?.type === 'zona') onClickZona(hit.zona);
+      else if (hit?.type === 'terreno') onClickTerreno(hit.terreno);
+    };
+    window.addEventListener('gesture-tap', handler);
+    return () => window.removeEventListener('gesture-tap', handler);
+  }, [modalActivo, raycastAt, onClickZona, onClickTerreno]);
+
+  // Mover cursor cada frame
+  useFrame(() => {
+    if (!modalActivo || !cursorRef.current || !ringRef.current) return;
+    const px = pointerRef.current.x;
+    const py = pointerRef.current.y;
+    if (px < 0 || py < 0) {
+      cursorRef.current.visible = false;
+      ringRef.current.visible = false;
+      return;
+    }
+
+    const ndc = new THREE.Vector2(px * 2 - 1, -(py * 2 - 1));
+    raycaster.setFromCamera(ndc, camera);
+    const hits = raycaster.intersectObjects(scene.children, true);
+
+    // Buscar primer hit sólido (no el cursor mismo)
+    const validHit = hits.find(h => h.object !== cursorRef.current && h.object !== ringRef.current);
+    if (validHit) {
+      const p = validHit.point;
+      cursorRef.current.position.set(p.x, p.y + 0.05, p.z);
+      cursorRef.current.visible = true;
+      ringRef.current.position.set(p.x, p.y + 0.03, p.z);
+      ringRef.current.visible = true;
+
+      // Check hover state para feedback visual
+      let hoverId: string | null = null;
+      let obj: THREE.Object3D | null = validHit.object;
+      while (obj) {
+        const ud = (obj as any).userData;
+        if (ud?.tipo === 'zona' || ud?.tipo === 'terreno') {
+          hoverId = ud.zonaId || ud.terrenoId;
+          break;
+        }
+        obj = obj.parent;
+      }
+      // Cambiar color del cursor si está sobre algo seleccionable
+      const mat = cursorRef.current.material as THREE.MeshStandardMaterial;
+      if (hoverId) {
+        mat.color.setHex(0x22d3ee); // cyan
+        mat.emissive.setHex(0x22d3ee);
+      } else {
+        mat.color.setHex(0xffffff);
+        mat.emissive.setHex(0xffffff);
+      }
+      prevHitRef.current = hoverId;
+    } else {
+      cursorRef.current.visible = false;
+      ringRef.current.visible = false;
+    }
+  });
+
+  if (!modalActivo) return null;
+
+  return (
+    <>
+      {/* Cursor dot */}
+      <mesh ref={cursorRef} visible={false}>
+        <sphereGeometry args={[0.3, 16, 16]} />
+        <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={2} transparent opacity={0.9} />
+      </mesh>
+      {/* Cursor ring */}
+      <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} visible={false}>
+        <ringGeometry args={[0.5, 0.7, 32]} />
+        <meshStandardMaterial color="#22d3ee" emissive="#22d3ee" emissiveIntensity={1} transparent opacity={0.5} side={THREE.DoubleSide} />
+      </mesh>
+    </>
+  );
+};
+
+/**
  * Puente: gestos MediaPipe → OrbitControls + cámara
  * Usa coordenadas esféricas para rotación 360° (modelo Sketchfab/Google model-viewer)
  */
@@ -238,7 +366,9 @@ const EscenaMarketplace: React.FC<{
   onClickTerreno: (t: TerrenoMarketplace) => void;
   onClickZona: (z: ZonaEmpresa) => void;
   gestureRef: React.MutableRefObject<{ gesture: GestureType; data: GestureData }>;
-}> = ({ terrenos, zonas, empresas, terrenoSeleccionado, zonaSeleccionada, onClickTerreno, onClickZona, gestureRef }) => {
+  pointerRef: React.MutableRefObject<{ x: number; y: number }>;
+  modalGestosActivo: boolean;
+}> = ({ terrenos, zonas, empresas, terrenoSeleccionado, zonaSeleccionada, onClickTerreno, onClickZona, gestureRef, pointerRef, modalGestosActivo }) => {
 
   const empresaMap = useMemo(() => {
     const map: Record<string, EmpresaPublica> = {};
@@ -272,7 +402,7 @@ const EscenaMarketplace: React.FC<{
       />
 
       {/* Suelo receptor de sombras */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[WORLD_CENTER, -0.02, WORLD_CENTER]} receiveShadow>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[WORLD_CENTER, -0.02, WORLD_CENTER]} receiveShadow userData={{ isGround: true }}>
         <planeGeometry args={[150, 150]} />
         <meshStandardMaterial color="#0f172a" transparent opacity={0.8} />
       </mesh>
@@ -298,6 +428,16 @@ const EscenaMarketplace: React.FC<{
         />
       ))}
 
+      {/* Cursor de gesto 3D (raycasting + reticle) */}
+      <CursorGesto3D
+        pointerRef={pointerRef}
+        modalActivo={modalGestosActivo}
+        zonas={zonas}
+        terrenos={terrenos}
+        onClickZona={onClickZona}
+        onClickTerreno={onClickTerreno}
+      />
+
       {/* Cámara orbital + puente de gestos MediaPipe */}
       <GestureOrbitBridge gestureRef={gestureRef} />
     </>
@@ -319,11 +459,23 @@ export const ExploradorPublico3D: React.FC = () => {
   const [modalGestos, setModalGestos] = useState(false);
   const gestureRef = useRef<{ gesture: GestureType; data: GestureData }>({
     gesture: 'none',
-    data: { x: 0.5, y: 0.5, pinchDistance: 0, handedness: 'right', deltaX: 0, deltaY: 0 },
+    data: { x: 0.5, y: 0.5, pinchDistance: 0, handedness: 'right', deltaX: 0, deltaY: 0, indexX: 0.5, indexY: 0.5 },
   });
+  const pointerRef = useRef<{ x: number; y: number }>({ x: 0.5, y: 0.5 });
 
   const handleGestureFromModal = useCallback((g: GestureType, data: GestureData) => {
+    // Tap = seleccionar zona/terreno bajo el cursor
+    if (g === 'tap') {
+      gestureRef.current = { gesture: 'none', data };
+      // Dispatch custom event para que CursorGesto3D lo procese via raycasting
+      window.dispatchEvent(new CustomEvent('gesture-tap', { detail: { x: data.indexX, y: data.indexY } }));
+      return;
+    }
     gestureRef.current = { gesture: g, data };
+  }, []);
+
+  const handlePointerMove = useCallback((x: number, y: number) => {
+    pointerRef.current = { x, y };
   }, []);
 
   useEffect(() => {
@@ -414,6 +566,8 @@ export const ExploradorPublico3D: React.FC = () => {
             onClickTerreno={handleClickTerreno}
             onClickZona={handleClickZona}
             gestureRef={gestureRef}
+            pointerRef={pointerRef}
+            modalGestosActivo={modalGestos}
           />
         </Suspense>
       </Canvas>
@@ -434,9 +588,11 @@ export const ExploradorPublico3D: React.FC = () => {
         abierto={modalGestos}
         onCerrar={() => {
           setModalGestos(false);
-          gestureRef.current = { gesture: 'none', data: { x: 0.5, y: 0.5, pinchDistance: 0, handedness: 'right', deltaX: 0, deltaY: 0 } };
+          gestureRef.current = { gesture: 'none', data: { x: 0.5, y: 0.5, pinchDistance: 0, handedness: 'right', deltaX: 0, deltaY: 0, indexX: 0.5, indexY: 0.5 } };
+          pointerRef.current = { x: -1, y: -1 };
         }}
         onGesture={handleGestureFromModal}
+        onPointerMove={handlePointerMove}
       />
 
       {/* Panel de detalle terreno */}
