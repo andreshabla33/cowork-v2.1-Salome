@@ -13,6 +13,8 @@
     "@livekit/components-react": "^2.9.19",
     "@livekit/components-styles": "^1.2.0",
     "@mediapipe/camera_utils": "^0.3.1675466862",
+    "@mediapipe/drawing_utils": "^0.3.1675466124",
+    "@mediapipe/hands": "^0.4.1675469240",
     "@mediapipe/selfie_segmentation": "^0.1.1675465747",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",

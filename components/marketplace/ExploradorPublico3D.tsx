@@ -1,7 +1,7 @@
 'use client';
 
-import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { Canvas } from '@react-three/fiber';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Grid, Text, Environment } from '@react-three/drei';
 import * as THREE from 'three';
 import type { TerrenoMarketplace, ZonaEmpresa } from '@/types';
@@ -11,6 +11,8 @@ import { TerrenoDisponible3D } from './TerrenoDisponible3D';
 import { PanelDetalleTerreno } from './PanelDetalleTerreno';
 import { PanelDetalleEmpresa } from './PanelDetalleEmpresa';
 import { HUDMarketplace } from './HUDMarketplace';
+import { ModalGestosMediaPipe } from './ModalGestosMediaPipe';
+import type { GestureType, GestureData } from './HandController';
 
 const ESPACIO_GLOBAL_ID = '91887e81-1f26-448c-9d6d-9839e7d83b5d';
 const WORLD_SCALE = 1 / 16; // Igual que VirtualSpace3D: posicion / 16
@@ -156,6 +158,75 @@ const ZonaExistente3D: React.FC<{
 };
 
 /**
+ * Puente: gestos MediaPipe → OrbitControls + cámara
+ * Usa coordenadas esféricas para rotación 360° (modelo Sketchfab/Google model-viewer)
+ */
+const GestureOrbitBridge: React.FC<{
+  gestureRef: React.MutableRefObject<{ gesture: GestureType; data: GestureData }>;
+}> = ({ gestureRef }) => {
+  const { camera } = useThree();
+  const controlsRef = useRef<any>(null);
+  const velocityRef = useRef({ x: 0, y: 0 });
+
+  useFrame(() => {
+    if (!controlsRef.current) return;
+    const controls = controlsRef.current;
+    const g = gestureRef.current.gesture;
+    const d = gestureRef.current.data;
+
+    if (g === 'pinch_drag') {
+      controls.enabled = false;
+      controls.autoRotate = false;
+      velocityRef.current.x = -d.deltaX * 6;
+      velocityRef.current.y = -d.deltaY * 6;
+    } else if (g === 'pinch_zoom') {
+      controls.enabled = false;
+      controls.autoRotate = false;
+      const zoomDir = d.deltaY > 0 ? -1 : 1;
+      const dist = camera.position.distanceTo(controls.target);
+      const newDist = THREE.MathUtils.clamp(dist + zoomDir, 10, 120);
+      const dir = camera.position.clone().sub(controls.target).normalize();
+      camera.position.copy(controls.target).add(dir.multiplyScalar(newDist));
+    } else {
+      controls.enabled = true;
+      controls.autoRotate = true;
+      velocityRef.current.x *= 0.9;
+      velocityRef.current.y *= 0.9;
+    }
+
+    const vx = velocityRef.current.x;
+    const vy = velocityRef.current.y;
+    if (Math.abs(vx) > 0.001 || Math.abs(vy) > 0.001) {
+      const target = controls.target as THREE.Vector3;
+      const offset = camera.position.clone().sub(target);
+      const spherical = new THREE.Spherical().setFromVector3(offset);
+      spherical.theta -= vx;
+      spherical.phi = THREE.MathUtils.clamp(spherical.phi + vy, 0.2, Math.PI / 2.2);
+      offset.setFromSpherical(spherical);
+      camera.position.copy(target).add(offset);
+      camera.lookAt(target);
+    }
+  });
+
+  return (
+    <OrbitControls
+      ref={controlsRef}
+      makeDefault
+      enablePan
+      enableZoom
+      enableRotate
+      minDistance={10}
+      maxDistance={120}
+      maxPolarAngle={Math.PI / 2.2}
+      minPolarAngle={0.2}
+      target={[WORLD_CENTER, 0, WORLD_CENTER]}
+      autoRotate
+      autoRotateSpeed={0.15}
+    />
+  );
+};
+
+/**
  * Escena 3D del marketplace
  */
 const EscenaMarketplace: React.FC<{
@@ -166,7 +237,8 @@ const EscenaMarketplace: React.FC<{
   zonaSeleccionada: string | null;
   onClickTerreno: (t: TerrenoMarketplace) => void;
   onClickZona: (z: ZonaEmpresa) => void;
-}> = ({ terrenos, zonas, empresas, terrenoSeleccionado, zonaSeleccionada, onClickTerreno, onClickZona }) => {
+  gestureRef: React.MutableRefObject<{ gesture: GestureType; data: GestureData }>;
+}> = ({ terrenos, zonas, empresas, terrenoSeleccionado, zonaSeleccionada, onClickTerreno, onClickZona, gestureRef }) => {
 
   const empresaMap = useMemo(() => {
     const map: Record<string, EmpresaPublica> = {};
@@ -226,20 +298,8 @@ const EscenaMarketplace: React.FC<{
         />
       ))}
 
-      {/* Cámara orbital */}
-      <OrbitControls
-        makeDefault
-        enablePan
-        enableZoom
-        enableRotate
-        minDistance={10}
-        maxDistance={120}
-        maxPolarAngle={Math.PI / 2.2}
-        minPolarAngle={0.2}
-        target={[WORLD_CENTER, 0, WORLD_CENTER]}
-        autoRotate
-        autoRotateSpeed={0.15}
-      />
+      {/* Cámara orbital + puente de gestos MediaPipe */}
+      <GestureOrbitBridge gestureRef={gestureRef} />
     </>
   );
 };
@@ -256,6 +316,15 @@ export const ExploradorPublico3D: React.FC = () => {
   const [terrenoSeleccionado, setTerrenoSeleccionado] = useState<TerrenoMarketplace | null>(null);
   const [zonaSeleccionada, setZonaSeleccionada] = useState<ZonaEmpresa | null>(null);
   const [filtroTier, setFiltroTier] = useState<string | null>(null);
+  const [modalGestos, setModalGestos] = useState(false);
+  const gestureRef = useRef<{ gesture: GestureType; data: GestureData }>({
+    gesture: 'none',
+    data: { x: 0.5, y: 0.5, pinchDistance: 0, handedness: 'right', deltaX: 0, deltaY: 0 },
+  });
+
+  const handleGestureFromModal = useCallback((g: GestureType, data: GestureData) => {
+    gestureRef.current = { gesture: g, data };
+  }, []);
 
   useEffect(() => {
     const cargar = async () => {
@@ -344,6 +413,7 @@ export const ExploradorPublico3D: React.FC = () => {
             zonaSeleccionada={zonaSeleccionada?.id || null}
             onClickTerreno={handleClickTerreno}
             onClickZona={handleClickZona}
+            gestureRef={gestureRef}
           />
         </Suspense>
       </Canvas>
@@ -355,6 +425,18 @@ export const ExploradorPublico3D: React.FC = () => {
         filtroTier={filtroTier}
         setFiltroTier={setFiltroTier}
         onVolverHome={handleVolverHome}
+        onToggleGestos={() => setModalGestos(m => !m)}
+        gestosActivos={modalGestos}
+      />
+
+      {/* Modal de gestos MediaPipe */}
+      <ModalGestosMediaPipe
+        abierto={modalGestos}
+        onCerrar={() => {
+          setModalGestos(false);
+          gestureRef.current = { gesture: 'none', data: { x: 0.5, y: 0.5, pinchDistance: 0, handedness: 'right', deltaX: 0, deltaY: 0 } };
+        }}
+        onGesture={handleGestureFromModal}
       />
 
       {/* Panel de detalle terreno */}

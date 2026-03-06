@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Building2, MapPin, Eye, ShoppingCart, Sparkles, ArrowLeft } from 'lucide-react';
+import { Building2, MapPin, Eye, ShoppingCart, Sparkles, ArrowLeft, Hand } from 'lucide-react';
 import type { TerrenoMarketplace, ZonaEmpresa } from '@/types';
 
 interface HUDMarketplaceProps {
@@ -10,6 +10,8 @@ interface HUDMarketplaceProps {
   filtroTier: string | null;
   setFiltroTier: (tier: string | null) => void;
   onVolverHome: () => void;
+  onToggleGestos?: () => void;
+  gestosActivos?: boolean;
 }
 
 export const HUDMarketplace: React.FC<HUDMarketplaceProps> = ({
@@ -18,6 +20,8 @@ export const HUDMarketplace: React.FC<HUDMarketplaceProps> = ({
   filtroTier,
   setFiltroTier,
   onVolverHome,
+  onToggleGestos,
+  gestosActivos = false,
 }) => {
   const disponibles = terrenos.filter((t) => t.estado === 'disponible').length;
   const reservados = terrenos.filter((t) => t.estado === 'reservado').length;
@@ -83,6 +87,23 @@ export const HUDMarketplace: React.FC<HUDMarketplaceProps> = ({
           />
         </div>
       </div>
+
+      {/* Botón de gestos MediaPipe */}
+      {onToggleGestos && (
+        <div className="fixed bottom-24 right-5 z-40">
+          <button
+            onClick={onToggleGestos}
+            className={`flex items-center gap-2 px-4 py-2.5 backdrop-blur-xl border rounded-2xl transition-all group ${
+              gestosActivos
+                ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300'
+                : 'bg-black/60 border-white/10 text-zinc-400 hover:bg-white/10 hover:text-white'
+            }`}
+          >
+            <Hand className="w-4 h-4" />
+            <span className="text-xs font-bold">{gestosActivos ? 'Gestos ON' : 'Control por Gestos'}</span>
+          </button>
+        </div>
+      )}
 
       {/* Instrucciones */}
       <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-40 pointer-events-none">
