@@ -3,11 +3,13 @@
 import React from 'react';
 import { X, Users, Building2, Globe, Briefcase, MapPin, ExternalLink, Sparkles } from 'lucide-react';
 import type { ZonaEmpresa } from '@/types';
-import type { EmpresaPublica } from '@/lib/terrenosMarketplace';
+import type { EmpresaPublica, ObjetoEspacio } from '@/lib/terrenosMarketplace';
+import { PreviewInteriorEmpresa3D } from './PreviewInteriorEmpresa3D';
 
 interface PanelDetalleEmpresaProps {
   zona: ZonaEmpresa | null;
   empresa: EmpresaPublica | null;
+  objetos: ObjetoEspacio[];
   onCerrar: () => void;
   onVerTerrenos: () => void;
 }
@@ -23,6 +25,7 @@ const TAMANO_LABELS: Record<string, string> = {
 export const PanelDetalleEmpresa: React.FC<PanelDetalleEmpresaProps> = ({
   zona,
   empresa,
+  objetos,
   onCerrar,
   onVerTerrenos,
 }) => {
@@ -132,66 +135,14 @@ export const PanelDetalleEmpresa: React.FC<PanelDetalleEmpresaProps> = ({
           </a>
         )}
 
-        {/* Vista previa del espacio (representación visual) */}
-        <div className="bg-white/5 rounded-xl border border-white/5 overflow-hidden">
-          <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider px-4 pt-4 pb-2">Vista del espacio</h4>
-          <div className="relative h-40 mx-4 mb-4 rounded-lg overflow-hidden" style={{ background: '#0f172a' }}>
-            <svg viewBox="0 0 300 160" className="w-full h-full">
-              {/* Grid de fondo */}
-              <defs>
-                <pattern id="ep-grid" width="30" height="30" patternUnits="userSpaceOnUse">
-                  <path d="M 30 0 L 0 0 0 30" fill="none" stroke="#1e293b" strokeWidth="0.5" />
-                </pattern>
-              </defs>
-              <rect width="300" height="160" fill="url(#ep-grid)" />
-
-              {/* Zona de la empresa */}
-              <rect x="40" y="20" width="220" height="120" rx="4" fill={color} fillOpacity="0.15" stroke={color} strokeWidth="1.5" strokeOpacity="0.5" />
-
-              {/* Escritorios representativos */}
-              {Array.from({ length: Math.min(empresa?.miembros_count || 3, 8) }).map((_, i) => {
-                const col = i % 4;
-                const row = Math.floor(i / 4);
-                return (
-                  <g key={i}>
-                    <rect
-                      x={70 + col * 50}
-                      y={45 + row * 50}
-                      width="30"
-                      height="18"
-                      rx="2"
-                      fill={color}
-                      fillOpacity="0.4"
-                      stroke={color}
-                      strokeWidth="0.5"
-                      strokeOpacity="0.6"
-                    />
-                    {/* Silla */}
-                    <circle
-                      cx={85 + col * 50}
-                      cy={72 + row * 50}
-                      r="5"
-                      fill={color}
-                      fillOpacity="0.3"
-                    />
-                  </g>
-                );
-              })}
-
-              {/* Nombre */}
-              <text x="150" y="150" fill="white" fontSize="10" textAnchor="middle" opacity="0.6">
-                {nombre}
-              </text>
-            </svg>
-
-            {/* Overlay con "activo" */}
-            {empresa && empresa.miembros_count > 0 && (
-              <div className="absolute top-2 right-2 flex items-center gap-1 px-2 py-0.5 bg-green-500/20 border border-green-500/30 rounded-full">
-                <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-                <span className="text-[9px] text-green-300 font-bold">ACTIVO</span>
-              </div>
-            )}
-          </div>
+        {/* Preview 3D LIVE del interior — objetos reales + GhostAvatars animados */}
+        <div>
+          <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Interior en vivo</h4>
+          <PreviewInteriorEmpresa3D
+            objetos={objetos}
+            miembros={empresa?.miembros_count || 0}
+            color={color}
+          />
         </div>
       </div>
 
