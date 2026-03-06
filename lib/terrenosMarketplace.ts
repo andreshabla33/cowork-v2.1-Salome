@@ -41,6 +41,48 @@ export const cargarZonasPublicas = async (
   return (data || []) as ZonaEmpresa[];
 };
 
+export interface EmpresaPublica {
+  id: string;
+  nombre: string;
+  industria: string | null;
+  tamano: string | null;
+  descripcion: string | null;
+  logo_url: string | null;
+  sitio_web: string | null;
+  miembros_count: number;
+}
+
+export const cargarEmpresasPublicas = async (
+  espacioId: string
+): Promise<EmpresaPublica[]> => {
+  const { data, error } = await supabase
+    .from('empresas')
+    .select('id, nombre, industria, tamano, descripcion, logo_url, sitio_web')
+    .eq('espacio_id', espacioId);
+
+  if (error) {
+    console.warn('Error cargando empresas públicas:', error.message);
+    return [];
+  }
+
+  // Contar miembros por empresa
+  const { data: miembrosData } = await supabase
+    .from('miembros_espacio')
+    .select('empresa_id')
+    .eq('espacio_id', espacioId)
+    .not('empresa_id', 'is', null);
+
+  const conteo: Record<string, number> = {};
+  (miembrosData || []).forEach((m: any) => {
+    if (m.empresa_id) conteo[m.empresa_id] = (conteo[m.empresa_id] || 0) + 1;
+  });
+
+  return (data || []).map((e: any) => ({
+    ...e,
+    miembros_count: conteo[e.id] || 0,
+  }));
+};
+
 export const cargarTodosTerrenos = async (
   espacioId: string
 ): Promise<TerrenoMarketplace[]> => {

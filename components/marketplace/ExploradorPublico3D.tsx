@@ -5,9 +5,11 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Grid, Text, Environment } from '@react-three/drei';
 import * as THREE from 'three';
 import type { TerrenoMarketplace, ZonaEmpresa } from '@/types';
-import { cargarTerrenosPublicos, cargarZonasPublicas } from '@/lib/terrenosMarketplace';
+import { cargarTerrenosPublicos, cargarZonasPublicas, cargarEmpresasPublicas } from '@/lib/terrenosMarketplace';
+import type { EmpresaPublica } from '@/lib/terrenosMarketplace';
 import { TerrenoDisponible3D } from './TerrenoDisponible3D';
 import { PanelDetalleTerreno } from './PanelDetalleTerreno';
+import { PanelDetalleEmpresa } from './PanelDetalleEmpresa';
 import { HUDMarketplace } from './HUDMarketplace';
 
 const ESPACIO_GLOBAL_ID = '91887e81-1f26-448c-9d6d-9839e7d83b5d';
@@ -16,9 +18,14 @@ const WORLD_SIZE_PX = 800;
 const WORLD_CENTER = (WORLD_SIZE_PX * WORLD_SCALE) / 2;
 
 /**
- * Componente 3D para zona de empresa existente (read-only, simplificado)
+ * Componente 3D para zona de empresa existente — clickeable con interior visible
  */
-const ZonaExistente3D: React.FC<{ zona: ZonaEmpresa }> = ({ zona }) => {
+const ZonaExistente3D: React.FC<{
+  zona: ZonaEmpresa;
+  empresa?: EmpresaPublica;
+  onClick?: (zona: ZonaEmpresa) => void;
+  seleccionada?: boolean;
+}> = ({ zona, empresa, onClick, seleccionada = false }) => {
   const escala = WORLD_SCALE;
   const anchoW = zona.ancho * escala;
   const altoW = zona.alto * escala;
@@ -26,16 +33,43 @@ const ZonaExistente3D: React.FC<{ zona: ZonaEmpresa }> = ({ zona }) => {
   const posZ = zona.posicion_y * escala;
   const color = zona.color || '#6366f1';
   const esComun = zona.es_comun;
+  const miembros = empresa?.miembros_count || 0;
+  const nombre = esComun ? 'Zona Común' : (empresa?.nombre || zona.nombre_zona || 'Empresa');
+
+  // Generar escritorios dentro de la zona
+  const escritorios = useMemo(() => {
+    const count = Math.min(miembros || 2, 12);
+    const cols = Math.ceil(Math.sqrt(count));
+    const rows = Math.ceil(count / cols);
+    const spacingX = anchoW / (cols + 1);
+    const spacingZ = altoW / (rows + 1);
+    const desks: Array<{ x: number; z: number }> = [];
+    for (let i = 0; i < count; i++) {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      desks.push({
+        x: -anchoW / 2 + spacingX * (col + 1),
+        z: -altoW / 2 + spacingZ * (row + 1),
+      });
+    }
+    return desks;
+  }, [miembros, anchoW, altoW]);
 
   return (
     <group position={[posX, 0, posZ]}>
-      {/* Suelo */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
+      {/* Suelo clickeable */}
+      <mesh
+        rotation={[-Math.PI / 2, 0, 0]}
+        position={[0, 0.01, 0]}
+        onClick={(e) => { e.stopPropagation(); onClick?.(zona); }}
+        onPointerOver={() => { document.body.style.cursor = 'pointer'; }}
+        onPointerOut={() => { document.body.style.cursor = 'default'; }}
+      >
         <planeGeometry args={[anchoW, altoW]} />
         <meshStandardMaterial
           color={color}
           transparent
-          opacity={esComun ? 0.15 : 0.3}
+          opacity={seleccionada ? 0.5 : esComun ? 0.15 : 0.25}
           side={THREE.DoubleSide}
         />
       </mesh>
@@ -43,48 +77,98 @@ const ZonaExistente3D: React.FC<{ zona: ZonaEmpresa }> = ({ zona }) => {
       {/* Borde */}
       <lineSegments>
         <edgesGeometry args={[new THREE.PlaneGeometry(anchoW, altoW)]} />
-        <lineBasicMaterial color={color} transparent opacity={0.5} />
+        <lineBasicMaterial color={seleccionada ? '#ffffff' : color} transparent opacity={seleccionada ? 0.9 : 0.5} />
       </lineSegments>
 
-      {/* Mini edificio representativo */}
-      {!esComun && (
-        <mesh position={[0, 0.3, 0]}>
-          <boxGeometry args={[anchoW * 0.5, 0.6, altoW * 0.5]} />
-          <meshStandardMaterial
-            color={color}
-            transparent
-            opacity={0.4}
-          />
-        </mesh>
-      )}
+      {/* Mini escritorios 3D dentro de la zona (solo empresas no comunes) */}
+      {!esComun && escritorios.map((d, i) => (
+        <group key={i} position={[d.x, 0, d.z]}>
+          {/* Mesa */}
+          <mesh position={[0, 0.12, 0]}>
+            <boxGeometry args={[0.35, 0.04, 0.2]} />
+            <meshStandardMaterial color={color} transparent opacity={0.6} />
+          </mesh>
+          {/* Patas */}
+          {[[-0.14, -0.08], [0.14, -0.08], [-0.14, 0.08], [0.14, 0.08]].map(([lx, lz], li) => (
+            <mesh key={li} position={[lx, 0.05, lz]}>
+              <boxGeometry args={[0.02, 0.1, 0.02]} />
+              <meshStandardMaterial color={color} transparent opacity={0.4} />
+            </mesh>
+          ))}
+          {/* Silla (cilindro pequeño) */}
+          <mesh position={[0, 0.08, 0.2]}>
+            <cylinderGeometry args={[0.06, 0.06, 0.16, 8]} />
+            <meshStandardMaterial color={color} transparent opacity={0.35} />
+          </mesh>
+          {/* Monitor en la mesa */}
+          <mesh position={[0, 0.2, -0.05]}>
+            <boxGeometry args={[0.15, 0.1, 0.01]} />
+            <meshStandardMaterial color="#1e293b" emissive={color} emissiveIntensity={0.3} />
+          </mesh>
+        </group>
+      ))}
+
+      {/* Zona común: bancos en círculo */}
+      {esComun && [0, 1, 2, 3].map((i) => {
+        const ang = (i / 4) * Math.PI * 2;
+        return (
+          <mesh key={i} position={[Math.cos(ang) * anchoW * 0.25, 0.08, Math.sin(ang) * altoW * 0.25]}>
+            <boxGeometry args={[0.3, 0.04, 0.15]} />
+            <meshStandardMaterial color="#3b82f6" transparent opacity={0.4} />
+          </mesh>
+        );
+      })}
 
       {/* Nombre */}
       <Text
-        position={[0, esComun ? 0.3 : 0.8, 0]}
+        position={[0, esComun ? 0.3 : 0.5, 0]}
         fontSize={0.22}
-        color={color}
+        color="white"
         anchorX="center"
         anchorY="middle"
-        outlineWidth={0.01}
+        outlineWidth={0.015}
         outlineColor="#000000"
       >
-        {esComun ? 'Zona Común' : (zona.empresa?.nombre || zona.nombre_zona || 'Empresa')}
+        {nombre}
       </Text>
 
-      {/* Badge OCUPADO */}
-      {!esComun && (
+      {/* Industria / info */}
+      {!esComun && empresa?.industria && (
         <Text
-          position={[0, 1.05, 0]}
-          fontSize={0.14}
-          color="#94a3b8"
+          position={[0, 0.3, 0]}
+          fontSize={0.12}
+          color={color}
           anchorX="center"
           anchorY="middle"
-          outlineWidth={0.01}
+          outlineWidth={0.008}
           outlineColor="#000000"
         >
-          OCUPADO
+          {empresa.industria} · {miembros} miembros
         </Text>
       )}
+
+      {/* Badge clickeable */}
+      {!esComun && (
+        <Text
+          position={[0, 0.7, 0]}
+          fontSize={0.1}
+          color="#22c55e"
+          anchorX="center"
+          anchorY="middle"
+          outlineWidth={0.008}
+          outlineColor="#000000"
+        >
+          ▶ Click para ver interior
+        </Text>
+      )}
+
+      {/* Esquineros */}
+      {[[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sz], i) => (
+        <mesh key={i} position={[sx * anchoW / 2, 0.1, sz * altoW / 2]}>
+          <cylinderGeometry args={[0.02, 0.02, 0.2, 6]} />
+          <meshStandardMaterial color={color} emissive={color} emissiveIntensity={seleccionada ? 0.8 : 0.3} />
+        </mesh>
+      ))}
     </group>
   );
 };
@@ -95,9 +179,18 @@ const ZonaExistente3D: React.FC<{ zona: ZonaEmpresa }> = ({ zona }) => {
 const EscenaMarketplace: React.FC<{
   terrenos: TerrenoMarketplace[];
   zonas: ZonaEmpresa[];
+  empresas: EmpresaPublica[];
   terrenoSeleccionado: string | null;
+  zonaSeleccionada: string | null;
   onClickTerreno: (t: TerrenoMarketplace) => void;
-}> = ({ terrenos, zonas, terrenoSeleccionado, onClickTerreno }) => {
+  onClickZona: (z: ZonaEmpresa) => void;
+}> = ({ terrenos, zonas, empresas, terrenoSeleccionado, zonaSeleccionada, onClickTerreno, onClickZona }) => {
+
+  const empresaMap = useMemo(() => {
+    const map: Record<string, EmpresaPublica> = {};
+    empresas.forEach((e) => { map[e.id] = e; });
+    return map;
+  }, [empresas]);
 
   return (
     <>
@@ -130,9 +223,15 @@ const EscenaMarketplace: React.FC<{
         <meshStandardMaterial color="#0f172a" transparent opacity={0.8} />
       </mesh>
 
-      {/* Zonas de empresas existentes */}
+      {/* Zonas de empresas existentes — clickeables */}
       {zonas.map((zona) => (
-        <ZonaExistente3D key={zona.id} zona={zona} />
+        <ZonaExistente3D
+          key={zona.id}
+          zona={zona}
+          empresa={zona.empresa_id ? empresaMap[zona.empresa_id] : undefined}
+          onClick={onClickZona}
+          seleccionada={zonaSeleccionada === zona.id}
+        />
       ))}
 
       {/* Terrenos disponibles */}
@@ -169,19 +268,23 @@ const EscenaMarketplace: React.FC<{
 export const ExploradorPublico3D: React.FC = () => {
   const [terrenos, setTerrenos] = useState<TerrenoMarketplace[]>([]);
   const [zonas, setZonas] = useState<ZonaEmpresa[]>([]);
+  const [empresas, setEmpresas] = useState<EmpresaPublica[]>([]);
   const [cargando, setCargando] = useState(true);
   const [terrenoSeleccionado, setTerrenoSeleccionado] = useState<TerrenoMarketplace | null>(null);
+  const [zonaSeleccionada, setZonaSeleccionada] = useState<ZonaEmpresa | null>(null);
   const [filtroTier, setFiltroTier] = useState<string | null>(null);
 
   useEffect(() => {
     const cargar = async () => {
       setCargando(true);
-      const [t, z] = await Promise.all([
+      const [t, z, e] = await Promise.all([
         cargarTerrenosPublicos(ESPACIO_GLOBAL_ID),
         cargarZonasPublicas(ESPACIO_GLOBAL_ID),
+        cargarEmpresasPublicas(ESPACIO_GLOBAL_ID),
       ]);
       setTerrenos(t);
       setZonas(z);
+      setEmpresas(e);
       setCargando(false);
     };
     cargar();
@@ -192,12 +295,22 @@ export const ExploradorPublico3D: React.FC = () => {
     return terrenos.filter((t) => t.tier === filtroTier);
   }, [terrenos, filtroTier]);
 
+  const empresaSeleccionada = useMemo(() => {
+    if (!zonaSeleccionada?.empresa_id) return null;
+    return empresas.find((e) => e.id === zonaSeleccionada.empresa_id) || null;
+  }, [zonaSeleccionada, empresas]);
+
   const handleClickTerreno = useCallback((t: TerrenoMarketplace) => {
+    setZonaSeleccionada(null);
     setTerrenoSeleccionado((prev) => (prev?.id === t.id ? null : t));
   }, []);
 
+  const handleClickZona = useCallback((z: ZonaEmpresa) => {
+    setTerrenoSeleccionado(null);
+    setZonaSeleccionada((prev) => (prev?.id === z.id ? null : z));
+  }, []);
+
   const handleReservar = useCallback((t: TerrenoMarketplace) => {
-    // Por ahora, redirigir a login para completar la reserva
     alert(`Para reservar "${t.nombre}" necesitas crear una cuenta.\n\nRedirigiendo al registro...`);
     window.location.href = '/';
   }, []);
@@ -241,8 +354,11 @@ export const ExploradorPublico3D: React.FC = () => {
           <EscenaMarketplace
             terrenos={terrenosFiltrados}
             zonas={zonas}
+            empresas={empresas}
             terrenoSeleccionado={terrenoSeleccionado?.id || null}
+            zonaSeleccionada={zonaSeleccionada?.id || null}
             onClickTerreno={handleClickTerreno}
+            onClickZona={handleClickZona}
           />
         </Suspense>
       </Canvas>
@@ -256,11 +372,22 @@ export const ExploradorPublico3D: React.FC = () => {
         onVolverHome={handleVolverHome}
       />
 
-      {/* Panel de detalle */}
+      {/* Panel de detalle terreno */}
       <PanelDetalleTerreno
         terreno={terrenoSeleccionado}
         onCerrar={() => setTerrenoSeleccionado(null)}
         onReservar={handleReservar}
+      />
+
+      {/* Panel de detalle empresa */}
+      <PanelDetalleEmpresa
+        zona={zonaSeleccionada}
+        empresa={empresaSeleccionada}
+        onCerrar={() => setZonaSeleccionada(null)}
+        onVerTerrenos={() => {
+          setZonaSeleccionada(null);
+          setFiltroTier(null);
+        }}
       />
     </div>
   );
