@@ -322,45 +322,66 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
     return { modelScaleCorrection: 1, modelYOffset: 0 };
   }, [avatarConfig?.escala, avatarConfig?.nombre]);
 
-  // Medir altura REAL del avatar DESPUÉS del primer render (cuando SkinnedMesh ya está posado).
-  // Usa computeBoundingBox() que calcula vértices reales transformados por huesos.
-  // Referencia: https://discourse.threejs.org/t/boundingbox-wrong-calculation-with-skinned-meshes/48204
+  // Medir altura REAL basada en HUESOS en tiempo de ejecución (después del render).
+  // Los SkinnedMesh NO actualizan su boundingBox con la animación, pero los huesos sí
+  // (gracias a AnimationMixer). Esperamos unos frames y leemos la posición del Head bone.
   const heightComputedRef = useRef(false);
   const frameCountRef = useRef(0);
+  
   useFrame(() => {
     if (heightComputedRef.current || !groupRef.current || !onHeightComputed) return;
-    // Esperar 2 frames para asegurar que el skeleton esté actualizado
+    
+    // Esperar unos frames para que AnimationMixer pose el modelo y matrices se actualicen
     frameCountRef.current++;
-    if (frameCountRef.current < 3) return;
+    if (frameCountRef.current < 5) return;
 
-    let maxWorldY = -Infinity;
-    let found = false;
+    let targetBone: THREE.Bone | null = null;
+    let fallbackBoneY = 0;
+    
+    // Buscar el hueso más alto confiable (HeadTop_End o Head)
     clone.traverse((child: any) => {
-      if (child.isSkinnedMesh) {
-        found = true;
-        child.computeBoundingBox();
-        if (child.geometry.boundingBox) {
-          const worldMax = child.geometry.boundingBox.max.clone();
-          child.localToWorld(worldMax);
-          if (worldMax.y > maxWorldY) maxWorldY = worldMax.y;
+      if (child.isBone) {
+        const name = child.name.toLowerCase();
+        if (name.includes('headtop_end')) {
+          targetBone = child;
+        } else if (!targetBone && name.includes('head')) {
+          targetBone = child;
         }
+        // Medida de seguridad si no encontramos cabeza
+        const pos = new THREE.Vector3();
+        child.getWorldPosition(pos);
+        if (pos.y > fallbackBoneY) fallbackBoneY = pos.y;
       }
     });
-    // Fallback para modelos estáticos sin SkinnedMesh
-    if (!found) {
+
+    const rootPos = new THREE.Vector3();
+    groupRef.current.getWorldPosition(rootPos);
+    
+    let worldHeight = 0;
+    
+    if (targetBone) {
+      const bonePos = new THREE.Vector3();
+      targetBone.getWorldPosition(bonePos);
+      worldHeight = bonePos.y - rootPos.y;
+    } else {
+      // Si no hay huesos (modelo estático) o no hay cabeza, fallback
       const box = new THREE.Box3().setFromObject(clone);
-      if (box.max.y > maxWorldY) maxWorldY = box.max.y;
-      found = true;
-    }
-    if (found && maxWorldY > -Infinity) {
-      const rootPos = new THREE.Vector3();
-      groupRef.current!.getWorldPosition(rootPos);
-      const height = maxWorldY - rootPos.y;
-      if (height > 0.3) {
-        heightComputedRef.current = true;
-        console.log(`📏 ${avatarConfig?.nombre || 'avatar'}: altura=${height.toFixed(2)} (computeBoundingBox post-render)`);
-        onHeightComputed(height);
+      worldHeight = box.max.y - box.min.y;
+      if (worldHeight < 0.1 && fallbackBoneY > 0) {
+         worldHeight = fallbackBoneY - rootPos.y;
       }
+    }
+
+    // worldHeight ya incluye TODAS las escalas (gltfScale y avatarConfig.escala).
+    // Pero el componente <Html> está a nivel del <group> padre de Avatar3DScene,
+    // que YA TIENE la escala del mundo pero NO la escala gltfScale del avatar.
+    // Para no duplicar escalas en Avatar3DScene, pasamos la altura "local" al avatar.
+    
+    // worldHeight > 0.1 previene falsos positivos de bind pose
+    if (worldHeight > 0.1) {
+      heightComputedRef.current = true;
+      console.log(`📏 ${avatarConfig?.nombre || 'avatar'}: altura=${worldHeight.toFixed(2)} (bone=${targetBone ? targetBone.name : 'fallback'})`);
+      onHeightComputed(worldHeight);
     }
   });
 
