@@ -38,8 +38,15 @@ self.addEventListener('fetch', (event) => {
   // Solo GET requests
   if (event.request.method !== 'GET') return;
 
-  // No cachear API de Supabase realtime/auth
-  if (url.pathname.includes('/rest/') || url.pathname.includes('/auth/') || url.pathname.includes('/realtime/')) return;
+  // No cachear API de Supabase realtime/auth ni Storage public (evita CORS tainted cache)
+  if (
+    url.pathname.includes('/rest/') || 
+    url.pathname.includes('/auth/') || 
+    url.pathname.includes('/realtime/') ||
+    url.hostname.includes('supabase.co') 
+  ) {
+    return; // Dejar que el navegador maneje las peticiones de Supabase normalmente
+  }
 
   // Cache-first para assets 3D (GLB, texturas) — son inmutables
   const isCacheableAsset = CACHEABLE_EXTENSIONS.some((ext) => url.pathname.endsWith(ext));
@@ -49,11 +56,15 @@ self.addEventListener('fetch', (event) => {
       caches.match(event.request).then((cached) => {
         if (cached) return cached;
         return fetch(event.request).then((response) => {
-          if (response.ok) {
+          // Solo cachear respuestas válidas (no opaque CORS o errores 404)
+          if (response.ok && response.status === 200 && response.type === 'basic') {
             const clone = response.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
           }
           return response;
+        }).catch((err) => {
+          console.error('[SW] Fetch falló para asset 3D:', url.pathname, err);
+          throw err;
         });
       })
     );
@@ -71,6 +82,12 @@ self.addEventListener('fetch', (event) => {
         }
         return response;
       })
-      .catch(() => caches.match(event.request))
+      .catch(async (error) => {
+        // Fallback al cache si falla la red
+        const cached = await caches.match(event.request);
+        if (cached) return cached;
+        // Si no hay cache, propagar el error correctamente en vez de retornar undefined
+        throw error;
+      })
   );
 });
