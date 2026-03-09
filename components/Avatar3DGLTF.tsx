@@ -198,9 +198,12 @@ function remapAnimationTracks(
 
     if (stripPositions) {
       if (property === '.scale') return false;
-      // Solo eliminamos la posición global (Hips) para evitar que el avatar flote o se hunda 
-      // usando el offset del avatar original.
-      if (isHips && property === '.position') return false;
+      // Cross-skeleton: eliminar TODAS las posiciones (no solo Hips).
+      // Los tracks .position de cada hueso codifican las proporciones del personaje fuente
+      // (longitud de huesos, offsets). Si los mantenemos, sobreescriben las proporciones
+      // del avatar destino → estiramiento en idle, pies bajo el suelo al caminar.
+      // Solo se conservan rotaciones (quaternion), que son transferibles entre esqueletos.
+      if (property === '.position') return false;
     }
 
     // Strip root motion: eliminar position tracks del Hips (root bone) para walk/run
