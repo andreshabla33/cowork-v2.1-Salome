@@ -322,13 +322,29 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
     return { modelScaleCorrection: 1, modelYOffset: 0 };
   }, [avatarConfig?.escala, avatarConfig?.nombre]);
 
-  // Calcular altura real del modelo via Box3 y reportar al padre para posicionar labels
+  // Calcular altura real del modelo via huesos del esqueleto (confiable para SkinnedMesh).
+  // Box3.setFromObject() falla con SkinnedMesh antes del primer render (retorna 0).
+  // Los huesos siempre tienen posiciones correctas en el bind pose.
   useEffect(() => {
     if (!clone || !onHeightComputed) return;
-    const box = new THREE.Box3().setFromObject(clone);
-    const rawHeight = box.max.y - box.min.y;
-    const finalHeight = rawHeight * (avatarConfig?.escala || 1) * scale;
-    console.log(`📏 ${avatarConfig?.nombre || 'avatar'}: altura=${finalHeight.toFixed(2)} (raw=${rawHeight.toFixed(2)}, escala=${avatarConfig?.escala || 1}, scale=${scale})`);
+    let maxBoneY = 0;
+    let boneCount = 0;
+    const worldPos = new THREE.Vector3();
+    clone.updateWorldMatrix(true, true);
+    clone.traverse((child: any) => {
+      if (child.isBone) {
+        child.getWorldPosition(worldPos);
+        if (worldPos.y > maxBoneY) maxBoneY = worldPos.y;
+        boneCount++;
+      }
+    });
+    // Si no hay huesos (modelo estático), fallback a Box3
+    if (boneCount === 0) {
+      const box = new THREE.Box3().setFromObject(clone);
+      maxBoneY = box.max.y - box.min.y;
+    }
+    const finalHeight = maxBoneY * (avatarConfig?.escala || 1) * scale;
+    console.log(`📏 ${avatarConfig?.nombre || 'avatar'}: altura=${finalHeight.toFixed(2)} (boneMaxY=${maxBoneY.toFixed(2)}, bones=${boneCount}, escala=${avatarConfig?.escala || 1}, scale=${scale})`);
     onHeightComputed(finalHeight);
   }, [clone, avatarConfig?.escala, scale, onHeightComputed]);
 
