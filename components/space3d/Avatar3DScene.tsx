@@ -77,22 +77,11 @@ export const Avatar: React.FC<AvatarProps> = ({ position, config, name, status, 
   const [showStatusLabel, setShowStatusLabel] = useState(false);
   const [showFloatingCard, setShowFloatingCard] = useState(false);
   const [showRadialWheel, setShowRadialWheel] = useState(false);
-  const [avatarHeight, setAvatarHeight] = useState(2.0);
+  const [avatarEscala, setAvatarEscala] = useState(1.0);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastClickRef = useRef(0);
   const clickPreventedRef = useRef(false);
   const { avatar3DConfig } = useStore();
-  
-  // Padding constante sobre la cabeza del avatar para labels
-  const NAME_PADDING = 0.3;
-  const VIDEO_PADDING = 1.2;
-  const CHAT_PADDING = 1.0;
-  const REACTION_PADDING = 0.5;
-  const nameY = avatarHeight + NAME_PADDING;
-  const videoY = avatarHeight + VIDEO_PADDING;
-  const chatY = avatarHeight + (camOn ? VIDEO_PADDING + CHAT_PADDING + 1.0 : CHAT_PADDING);
-  const reactionY = avatarHeight + (camOn ? VIDEO_PADDING + REACTION_PADDING + 0.5 : REACTION_PADDING);
-  const radialY = avatarHeight + (camOn ? VIDEO_PADDING + 1.0 : REACTION_PADDING);
   
   // Leer video settings, space3d settings y performance settings desde localStorage
   const videoSettings = useMemo(() => getSettingsSection('video'), []);
@@ -110,6 +99,15 @@ export const Avatar: React.FC<AvatarProps> = ({ position, config, name, status, 
   const renderGLTF = showHigh || (esMismaEmpresa && (showMid || showLow));
   const renderSprite = !renderGLTF && (showMid || showLow);
   const gltfScale = showHigh ? 1.2 : showMid ? 0.9 : 0.6; // Escala reducida a distancia
+  
+  // Posiciones Y proporcionales al tamaño del avatar (escala BD × gltfScale).
+  // Valores de referencia calibrados al hardcoded original: nameY=2.4 @ escala=1, gltfScale=1.2
+  const sf = avatarEscala * gltfScale; // scale factor
+  const nameY = 2.0 * sf;
+  const videoY = 2.9 * sf;
+  const chatY = camOn ? 4.8 * sf : 2.7 * sf;
+  const reactionY = camOn ? 3.7 * sf : 2.3 * sf;
+  const radialY = camOn ? 4.2 * sf : 2.3 * sf;
   const allowDetails = showHigh;
   // Misma empresa: nombre visible a cualquier distancia, video bubble visible a cualquier LOD (estilo LOL/Roblox)
   const allowName = showName && (!camOn || !(showHigh || showMid)) && (esMismaEmpresa || lodLevel !== 'low');
@@ -205,7 +203,7 @@ export const Avatar: React.FC<AvatarProps> = ({ position, config, name, status, 
           skinColor={config?.skinColor}
           clothingColor={config?.clothingColor}
           scale={gltfScale}
-          onHeightComputed={setAvatarHeight}
+          onHeightComputed={setAvatarEscala}
         />
       )}
       {/* Sprites solo para otras empresas o LOD bajo sin empresa */}

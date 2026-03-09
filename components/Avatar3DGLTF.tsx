@@ -322,40 +322,14 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
     return { modelScaleCorrection: 1, modelYOffset: 0 };
   }, [avatarConfig?.escala, avatarConfig?.nombre]);
 
-  // Calcular altura real del modelo — enfoque "socket en la cabeza" (como Fortnite/UE).
-  // 1. Buscar hueso HeadTop_End o Head (ignora accesorios como ropes/ribbons)
-  // 2. Si bone positions son ~0 (bind-matrix models), usar altura estándar Mixamo 1.75m
-  // 3. Multiplicar por escala final y clampear
+  // Reportar escala del avatar al padre para posicionar labels.
+  // No medimos huesos (getWorldPosition es inconsistente entre modelos).
+  // Todos los Mixamo son ~1.7m base; la escala de BD controla el tamaño visual.
   useEffect(() => {
-    if (!clone || !onHeightComputed) return;
-    const STANDARD_MIXAMO_HEIGHT = 1.75; // metros, altura promedio personaje Mixamo
+    if (!onHeightComputed) return;
     const escala = avatarConfig?.escala || 1;
-    const avatarScale = escala * scale;
-    let headBoneY = 0;
-    let headBoneName = '';
-    const worldPos = new THREE.Vector3();
-    clone.updateWorldMatrix(true, true);
-    // Buscar HeadTop_End primero, luego Head, luego Neck como fallback
-    const targetBones = ['headtop_end', 'head', 'neck'];
-    for (const target of targetBones) {
-      clone.traverse((child: any) => {
-        if (child.isBone && headBoneY === 0) {
-          const normalized = child.name.replace(/^mixamorig/i, '').toLowerCase();
-          if (normalized === target) {
-            child.getWorldPosition(worldPos);
-            headBoneY = worldPos.y;
-            headBoneName = child.name;
-          }
-        }
-      });
-      if (headBoneY > 0.5) break; // Encontrado y válido
-    }
-    // Si las posiciones de huesos son ~0 (bind-matrix model), usar altura estándar
-    const rawHeight = headBoneY > 0.5 ? headBoneY : STANDARD_MIXAMO_HEIGHT;
-    const finalHeight = rawHeight * avatarScale;
-    console.log(`📏 ${avatarConfig?.nombre || 'avatar'}: altura=${finalHeight.toFixed(2)} (bone=${headBoneName || 'fallback'}, rawY=${headBoneY.toFixed(2)}, ref=${rawHeight.toFixed(2)}, escala=${escala}, scale=${scale})`);
-    onHeightComputed(finalHeight);
-  }, [clone, avatarConfig?.escala, scale, onHeightComputed]);
+    onHeightComputed(escala);
+  }, [avatarConfig?.escala, onHeightComputed]);
 
   // Recopilar nombres de huesos del modelo + detectar cadena spine por jerarquía
   const { boneNames, spineChainMap } = useMemo(() => {
