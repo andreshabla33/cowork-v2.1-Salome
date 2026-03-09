@@ -101,12 +101,13 @@ export const Avatar: React.FC<AvatarProps> = ({ position, config, name, status, 
   const gltfScale = showHigh ? 1.2 : showMid ? 0.9 : 0.6; // Escala reducida a distancia
   
   // Posiciones Y basadas en altura REAL medida con computeBoundingBox post-render.
-  // avatarHeight = altura visual real del avatar en unidades de escena.
-  const nameY = avatarHeight + 0.15;
-  const videoY = avatarHeight + 0.9;
-  const chatY = avatarHeight + (camOn ? 2.5 : 0.7);
-  const reactionY = avatarHeight + (camOn ? 1.5 : 0.4);
-  const radialY = avatarHeight + (camOn ? 1.8 : 0.4);
+  // avatarHeight = altura visual real del avatar en unidades de escena (top del HeadTop_End).
+  // Sumamos un padding extra para evitar que el nombre choque con cuernos, sombreros, etc.
+  const nameY = avatarHeight + 0.4;
+  const videoY = avatarHeight + 1.15;
+  const chatY = avatarHeight + (camOn ? 2.75 : 0.95);
+  const reactionY = avatarHeight + (camOn ? 1.75 : 0.65);
+  const radialY = avatarHeight + (camOn ? 2.05 : 0.65);
   const allowDetails = showHigh;
   // Misma empresa: nombre visible a cualquier distancia, video bubble visible a cualquier LOD (estilo LOL/Roblox)
   const allowName = showName && (!camOn || !(showHigh || showMid)) && (esMismaEmpresa || lodLevel !== 'low');
