@@ -294,27 +294,37 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
         }
         const mats = Array.isArray(child.material) ? child.material : [child.material];
         mats.forEach((mat: any) => {
-          // FIX BLENDER EXPORT: Muchos modelos de Blender exportan Vertex Colors azules/morados por error.
-          // Desactivar vertexColors a menos que estemos seguros de que el modelo los necesita.
-          mat.vertexColors = false;
+          // FIX BLENDER EXPORT BUG: A veces los materiales de Blender se exportan 
+          // como espejos oscuros (alta metalidad, bajo roughness). En un entorno virtual 
+          // oscuro/azul, esto hace que el avatar se tiña completamente de violeta o azul oscuro.
+          
+          // Desactivar vertex colors si no hay map y el color base parece dañado,
+          // o simplemente confiar en que el script de Blender a veces exporta
+          // colores de vértice falsos.
+          if (mat.vertexColors) {
+            mat.vertexColors = false; 
+          }
           
           if (mat.map) {
-            // Ya no forzamos THREE.SRGBColorSpace porque GLTFLoader en Three.js 150+ lo hace auto.
-            // Hacerlo manual a veces causa dobles conversiones o problemas de renderizado.
             mat.map.needsUpdate = true;
+            // Para texturas base de albedo, asegurar que no sean ignoradas
+            mat.color = new THREE.Color(0xffffff); 
           }
           
-          // Forzar PBR web-compatible para avatares del pipeline FBX→Blender→GLB.
-          // Sin esto, el metalness alto del exportador hace que el avatar se vea morado/azul
-          // al reflejar el entorno (que es azul oscuro en el espacio virtual).
-          if (mat.isMeshStandardMaterial) {
+          if (mat.isMeshStandardMaterial || mat.isMeshPhysicalMaterial) {
+            // Forzar que el avatar NO sea metálico y NO refleje el fondo azul
             mat.metalness = 0.0;
-            mat.roughness = 0.8;
-            // Asegurar color base blanco si vertexColors estaba tiñendo todo
-            if (!mat.map && mat.color.getHex() === 0xffffff) {
-               // Dejar el color original
+            mat.roughness = 1.0;
+            // Desactivar la influencia del environment map en la piel/ropa
+            mat.envMapIntensity = 0.0;
+            
+            // Si Blender exportó un emissive map azulado por error, quitarlo
+            if (mat.emissiveMap || mat.emissive.getHex() !== 0x000000) {
+              mat.emissive = new THREE.Color(0x000000);
+              mat.emissiveIntensity = 0;
             }
           }
+          
           mat.side = THREE.DoubleSide;
           mat.needsUpdate = true;
         });
