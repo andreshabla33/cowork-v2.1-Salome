@@ -252,29 +252,18 @@ export const useStore = create<AppState>((set, get) => ({
                 .eq('activo', true)
                 .order('orden', { ascending: true });
 
-              // Fallback genérico: si no tiene anims propias, buscar de otro avatar
+              // Fallback: buscar animaciones universales (es_universal = true)
               let isFallback = false;
               if (!anims || anims.length === 0) {
-                const { data: fallbackAnims } = await supabase
+                const { data: universalAnims } = await supabase
                   .from('avatar_animaciones')
                   .select('id, nombre, url, loop, orden, strip_root_motion, avatar_id')
+                  .eq('es_universal', true)
                   .eq('activo', true)
-                  .order('avatar_id', { ascending: true })
                   .order('orden', { ascending: true });
-                if (fallbackAnims && fallbackAnims.length > 0) {
-                  const byAvatar = new Map<string, typeof fallbackAnims>();
-                  fallbackAnims.forEach(a => {
-                    const arr = byAvatar.get(a.avatar_id) || [];
-                    arr.push(a);
-                    byAvatar.set(a.avatar_id, arr);
-                  });
-                  for (const [, group] of byAvatar) {
-                    if (group.length >= 3) {
-                      anims = group;
-                      isFallback = true;
-                      break;
-                    }
-                  }
+                if (universalAnims && universalAnims.length > 0) {
+                  anims = universalAnims;
+                  isFallback = true;
                 }
               }
 

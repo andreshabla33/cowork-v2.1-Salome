@@ -441,19 +441,18 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
           anims = data;
         }
 
-        // 2) Fallback: si no tiene propias, buscar animaciones del primer avatar que tenga (genéricas)
+        // 2) Fallback: buscar animaciones universales (es_universal = true, compartidas por todos los avatares Mixamo)
         if (!anims || anims.length === 0) {
-          console.log(`⚠️ ${avatarConfig?.nombre || 'avatar'}: sin anims propias, buscando fallback genérico...`);
-          const { data: fallbackAnims } = await supabase
+          console.log(`⚠️ ${avatarConfig?.nombre || 'avatar'}: sin anims propias, buscando universales...`);
+          const { data: universalAnims } = await supabase
             .from('avatar_animaciones')
-            .select('id, nombre, url, loop, orden, strip_root_motion, avatar_id')
+            .select('id, nombre, url, loop, orden, strip_root_motion')
+            .eq('es_universal', true)
             .eq('activo', true)
             .order('orden', { ascending: true });
-          // Tomar solo las del primer avatar_id encontrado (set coherente)
-          if (fallbackAnims && fallbackAnims.length > 0) {
-            const firstAvatarId = (fallbackAnims[0] as any).avatar_id;
-            anims = fallbackAnims.filter((a: any) => a.avatar_id === firstAvatarId);
-            console.log(`✅ Fallback: usando ${anims.length} anims de avatar ${firstAvatarId}`);
+          if (universalAnims && universalAnims.length > 0) {
+            anims = universalAnims;
+            console.log(`✅ Universales: usando ${anims.length} anims compartidas`);
           }
         }
 
@@ -913,32 +912,20 @@ export const useAvatar3D = (userId?: string) => {
             .eq('activo', true)
             .order('orden', { ascending: true });
 
-          // Fallback genérico: si no tiene anims propias, buscar de otro avatar Mixamo-compatible
+          // Fallback: buscar animaciones universales (es_universal = true)
           let isFallback = false;
           if (!anims || anims.length === 0) {
-            console.log(`⚠️ ${avatar.nombre}: sin anims propias, buscando fallback genérico...`);
-            const { data: fallbackAnims } = await supabase
+            console.log(`⚠️ ${avatar.nombre}: sin anims propias, buscando universales...`);
+            const { data: universalAnims } = await supabase
               .from('avatar_animaciones')
-              .select('id, nombre, url, loop, orden, strip_root_motion, avatar_id')
+              .select('id, nombre, url, loop, orden, strip_root_motion')
+              .eq('es_universal', true)
               .eq('activo', true)
-              .order('avatar_id', { ascending: true })
               .order('orden', { ascending: true });
-            // Agrupar por avatar_id y tomar el primer avatar que tenga >= 3 anims (idle+walk+run mínimo)
-            if (fallbackAnims && fallbackAnims.length > 0) {
-              const byAvatar = new Map<string, typeof fallbackAnims>();
-              fallbackAnims.forEach(a => {
-                const arr = byAvatar.get(a.avatar_id) || [];
-                arr.push(a);
-                byAvatar.set(a.avatar_id, arr);
-              });
-              for (const [, group] of byAvatar) {
-                if (group.length >= 3) {
-                  anims = group;
-                  isFallback = true;
-                  console.log(`✅ Fallback cross-skeleton: usando ${group.length} anims de avatar ${group[0].avatar_id}`);
-                  break;
-                }
-              }
+            if (universalAnims && universalAnims.length > 0) {
+              anims = universalAnims;
+              isFallback = true;
+              console.log(`✅ Universales: usando ${universalAnims.length} anims compartidas`);
             }
           }
 
