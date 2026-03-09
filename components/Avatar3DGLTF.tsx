@@ -269,8 +269,11 @@ const GLTFAvatarInner: React.FC<GLTFAvatarProps> = ({
   const [currentAnimation, setCurrentAnimation] = useState<AnimationState>('idle');
   
   // URL del modelo base
-  const modelUrl = avatarConfig?.modelo_url || DEFAULT_MODEL_URL;
-  
+  const rawModelUrl = avatarConfig?.modelo_url || DEFAULT_MODEL_URL;
+  const modelUrl = rawModelUrl.includes('supabase.co') && rawModelUrl.endsWith('.glb')
+    ? `${rawModelUrl}?t=${new Date().getTime()}` // Evita caché de 1 año del storage
+    : rawModelUrl;
+
   // Cargar modelo principal + animaciones embebidas del GLB
   const { scene, animations: baseAnimations } = useGLTF(modelUrl);
   
